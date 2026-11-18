@@ -281,7 +281,7 @@ async function menuText(db: D1Database, date: string, title: string): Promise<st
       .filter((r) => r.meal === m)
       .map((r) => {
         const extra =
-          r.kind === "dish"
+          r.kind === "dish" && !r.unit
             ? r.servings !== r.base ? ` ×${fmtQty(r.servings)}` : ""
             : ` ${fmtQty(r.servings)}${r.unit ? " " + r.unit : ""}`;
         return `${escapeHtml(r.name)}${extra}`;

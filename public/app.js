@@ -244,7 +244,7 @@ function planChip(p) {
   const f = state.byId.get(p.food_id);
   if (!f) return "";
   const extra =
-    f.kind === "dish"
+    f.kind === "dish" && !f.unit
       ? p.servings !== f.servings ? ` <small>×${fmtQty(p.servings)}</small>` : ""
       : ` <small>${fmtQty(p.servings)}${f.unit ? " " + esc(f.unit) : ""}</small>`;
   return `<button class="chip k-${f.kind}" data-plan="${p.id}">${foodIcon(f)}${esc(f.name)}${extra}</button>`;
@@ -361,7 +361,7 @@ function openPlanEntry(id) {
   const sh = openSheet(`${sheetHead(`${foodIcon(f)} ${esc(f.name)}`)}
     <form id="pe" class="form">
       <div class="f2">
-        <label>${isDish ? `Khẩu phần <span class="hint">(công thức: ${f.servings})</span>` : `Số lượng${f.unit ? " (" + esc(f.unit) + ")" : ""}`}
+        <label>${isDish ? `Khẩu phần${f.unit ? " (" + esc(f.unit) + ")" : ""} <span class="hint">(công thức: ${f.servings})</span>` : `Số lượng${f.unit ? " (" + esc(f.unit) + ")" : ""}`}
           <input name="servings" inputmode="decimal" value="${fmtQty(p.servings)}" required /></label>
         <label>Bữa<select name="meal">${MEALS.map(([m, l]) => `<option value="${m}"${m === p.meal ? " selected" : ""}>${l}</option>`).join("")}</select></label>
       </div>
@@ -551,7 +551,7 @@ $("#s-reset").onclick = async (e) => {
 function foodSub(f) {
   if (f.kind === "dish") {
     const n = state.recipes.get(f.id)?.length ?? 0;
-    return [f.category, n ? `${n} nguyên liệu` : "chưa có công thức", `${f.servings} phần`].filter(Boolean).join(" · ");
+    return [f.category, n ? `${n} nguyên liệu` : "chưa có công thức", `${f.servings} ${f.unit || "phần"}`].filter(Boolean).join(" · ");
   }
   const price = f.price != null ? `${fmtMoney(f.price)}${f.unit ? "/" + f.unit : ""}` : f.unit;
   const n = state.recipes.get(f.id)?.length;
@@ -619,9 +619,9 @@ function openFoodEditor(id, opts = {}) {
         <label class="w-recipe">Khẩu phần<input name="servings" type="number" min="1" max="50" value="${f.servings ?? 1}" /></label>
         <label>Nhóm<input name="category" maxlength="30" value="${esc(f.category)}" /></label>
       </div>
-      <div class="f2 w-buy">
-        <label>Đơn vị mua<input name="unit" list="dl-units" maxlength="15" value="${esc(f.unit)}" /></label>
-        <label>Giá / đơn vị (nghìn đ)<input name="price" inputmode="decimal" value="${toK(f.price)}" /></label>
+      <div class="f2">
+        <label><span id="fe-unit-l">Đơn vị</span><input name="unit" list="dl-units" maxlength="15" value="${esc(f.unit)}" /></label>
+        <label class="w-buy">Giá / đơn vị (nghìn đ)<input name="price" inputmode="decimal" value="${toK(f.price)}" /></label>
       </div>
       <label class="w-buy">Nơi hay mua<input name="place" maxlength="60" value="${esc(f.place)}" /></label>
       <div class="w-recipe">
@@ -642,6 +642,7 @@ function openFoodEditor(id, opts = {}) {
     const recipeOn = kind === "dish" || kind === "drink";
     $$(".w-recipe", sh).forEach((el) => (el.hidden = !recipeOn));
     $$(".w-buy", sh).forEach((el) => (el.hidden = kind === "dish"));
+    $("#fe-unit-l", sh).textContent = kind === "dish" ? "Đơn vị (tô, đĩa, phần...)" : "Đơn vị mua";
     $('[name="category"]', sh).setAttribute("list", kind === "dish" ? "dl-cat-dish" : "dl-cat-buy");
     renderPhoto();
   };
@@ -710,7 +711,7 @@ function openFoodEditor(id, opts = {}) {
       name: fd.get("name"),
       category: fd.get("category"),
       servings: kind === "dish" || kind === "drink" ? fd.get("servings") : 1,
-      unit: kind === "dish" ? "" : fd.get("unit"),
+      unit: fd.get("unit"),
       price: kind === "dish" ? null : price,
       place: kind === "dish" ? "" : fd.get("place"),
       note: fd.get("note"),
