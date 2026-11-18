@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Meal Mate</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="top">
+    <h1>🍽️ Meal Mate</h1>
+    <span id="who" class="who"></span>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="plan" class="on">Thực đơn</button>
+    <button data-tab="shop">Đi chợ <span class="badge" id="shop-badge" hidden></span></button>
+    <button data-tab="lib">Thư viện</button>
+    <button data-tab="stats">Chi tiêu</button>
+  </nav>
+
+  <div id="blocker" class="blocker" hidden></div>
+
+  <main id="main">
+    <!-- Thực đơn tuần -->
+    <section id="tab-plan">
+      <div class="nav">
+        <button class="icon" id="w-prev" aria-label="Tuần trước">‹</button>
+        <button class="nav-t" id="w-label" title="Về tuần này"></button>
+        <button class="icon" id="w-next" aria-label="Tuần sau">›</button>
+      </div>
+      <div class="bar">
+        <button class="ghost sm" id="w-copy">Chép tuần trước</button>
+        <button class="primary sm" id="w-shop">🛒 Đi chợ cho tuần này</button>
+      </div>
+      <div id="days"></div>
+    </section>
+
+    <!-- Đi chợ -->
+    <section id="tab-shop" hidden>
+      <div class="gen">
+        <label>Từ <input type="date" id="s-from" /></label>
+        <label>đến <input type="date" id="s-to" /></label>
+        <button class="primary sm" id="s-gen">Tạo từ thực đơn</button>
+      </div>
+      <p class="sub" id="s-sum"></p>
+      <div id="shop-list"></div>
+      <form id="s-add" class="add-row" autocomplete="off">
+        <input id="s-name" list="dl-buy" placeholder="Thêm thứ cần mua" maxlength="60" required />
+        <input id="s-qty" inputmode="decimal" placeholder="SL" />
+        <input id="s-unit" list="dl-units" placeholder="ĐV" maxlength="15" />
+        <button class="primary sm" type="submit">+</button>
+      </form>
+      <div class="bar wrap">
+        <button class="ghost sm" id="s-send">📨 Gửi vào Telegram</button>
+        <button class="ghost sm" id="s-clear">✅ Dọn món đã mua</button>
+        <button class="ghost sm danger" id="s-reset">Xoá món chưa mua</button>
+      </div>
+      <p class="hint">Tick để đánh dấu đã mua. Ô bên phải là số tiền thực trả (nghìn đồng); nhập vào sẽ cập nhật giá tham khảo.</p>
+    </section>
+
+    <!-- Thư viện -->
+    <section id="tab-lib" hidden>
+      <div class="bar">
+        <input id="l-q" type="search" placeholder="Tìm (gõ không dấu cũng được)" />
+        <button class="primary sm" id="l-add">+ Thêm</button>
+      </div>
+      <div class="filter" id="l-kinds"></div>
+      <div class="list" id="lib-list"></div>
+    </section>
+
+    <!-- Chi tiêu -->
+    <section id="tab-stats" hidden>
+      <div class="nav">
+        <button class="icon" id="m-prev" aria-label="Tháng trước">‹</button>
+        <span class="nav-t" id="m-label"></span>
+        <button class="icon" id="m-next" aria-label="Tháng sau">›</button>
+      </div>
+      <div id="stats"></div>
+
+      <h2>Sao lưu</h2>
+      <div class="bar wrap">
+        <button class="ghost sm" id="b-export">📦 Gửi file sao lưu vào Telegram</button>
+        <label class="ghost sm btn">📥 Khôi phục từ file<input type="file" id="b-import" accept=".json,application/json" hidden /></label>
+      </div>
+      <p class="hint">Khôi phục sẽ thay toàn bộ dữ liệu hiện tại bằng dữ liệu trong file.</p>
+    </section>
+  </main>
+
+  <div class="sheet-bg" id="sheet-bg" hidden><div class="sheet" id="sheet"></div></div>
+  <div class="toast" id="toast" hidden></div>
+
+  <datalist id="dl-units"></datalist>
+  <datalist id="dl-cat-buy"></datalist>
+  <datalist id="dl-cat-dish"></datalist>
+  <datalist id="dl-ing"></datalist>
+  <datalist id="dl-buy"></datalist>
+
+  <script src="app.js"></script>
+</body>
+</html>

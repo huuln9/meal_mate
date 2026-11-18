@@ -1,0 +1,22 @@
+name = "meal-mate"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# Giao diện Mini App (thư mục public) được phục vụ chung với API.
+[assets]
+directory = "./public"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/bot/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "meal-mate"
+# Thay bằng Database ID lấy trên trang D1 của Cloudflare.
+database_id = "afe01148-6670-4525-a286-941e13281049"
+
+# 13:00 UTC = 20:00 giờ VN: bot nhắn thực đơn ngày mai. Xoá 2 dòng này nếu không cần nhắc.
+[triggers]
+crons = ["0 13 * * *"]
+
+# Biến bí mật (BOT_TOKEN, WEBHOOK_SECRET, OWNER_IDS) đặt trên Cloudflare:
+# Workers & Pages > meal-mate > Settings > Variables and Secrets.
