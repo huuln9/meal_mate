@@ -1,6 +1,9 @@
 name = "meal-mate"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
+workers_dev = true     # bật link *.workers.dev
+preview_urls = false   # tắt link preview cho từng phiên bản (không cần)
+keep_vars = true       # deploy không xoá biến thường khai báo trên dashboard
 
 # Giao diện Mini App (thư mục public) được phục vụ chung với API.
 [assets]
