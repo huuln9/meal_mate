@@ -5,11 +5,11 @@ Cùng kiến trúc với `bida_pool`, chạy chung tài khoản Cloudflare free 
 
 ## Chức năng
 
-- **Thư viện**: 3 loại **Đồ ăn / Trái cây / Đồ uống** — toàn đồ mua sẵn, không cần công thức.
+- **Thư viện**: 4 loại **Đồ ăn / Rau củ / Trái cây / Đồ uống** — toàn đồ mua sẵn, không cần công thức.
   Mỗi món: ảnh (tự cắt vuông, nén nhỏ; chưa có ảnh thì hiện chữ cái đầu), tên, đơn vị, giá, nhóm, nơi mua, ghi chú.
   Tìm kiếm gõ không dấu cũng được.
 - **Thực đơn tuần**: 6 bữa/ngày (Sáng / Phụ sáng / Trưa / Phụ chiều / Tối / Phụ tối). Bấm `+` để thêm món,
-  có 🎲 gợi ý món chưa ăn mấy ngày gần đây. Bấm vào món để đổi số lượng, chuyển bữa / ngày. Chép thực đơn tuần trước.
+  có 🎲 gợi ý món chưa ăn mấy ngày gần đây. Bấm vào món để đổi số lượng, chuyển bữa / ngày, thêm ghi chú. Chép thực đơn tuần trước.
 - **Đi chợ**: tự cộng số lượng từ thực đơn trong khoảng ngày, nhóm theo Nhóm của món, có giá ước tính.
   Tick đã mua, nhập tiền thực trả (nghìn đồng) → giá tham khảo tự cập nhật. Thêm tay, gửi danh sách vào Telegram.
   Tạo lại danh sách sẽ trừ phần đã mua, không bị trùng.
@@ -77,6 +77,7 @@ Khi code đổi cấu trúc bảng, chạy file trong `migrations/` **một lầ
 | `002_anh_mon.sql` | Bảng `food_images` lưu ảnh món |
 | `003_don_gian.sql` | Bỏ công thức; Món ăn + Nguyên liệu cũ thành Đồ ăn (trùng tên thì gộp) |
 | `004_don_db.sql` | Xoá bảng `recipe_items`, cột `emoji`, `servings` của `foods` (chạy sau 003) |
+| `005_rau_cu_ghi_chu.sql` | Thêm loại Rau củ (bỏ CHECK của `foods.kind`), thêm ghi chú cho từng bữa — dựng lại bảng, giữ dữ liệu |
 
 DB mới tạo từ `schema.sql` đã có sẵn, không cần chạy migration.
 

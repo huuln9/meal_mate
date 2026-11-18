@@ -29,6 +29,7 @@ if (tg) {
 // ---------- hằng số ----------
 const KIND = {
   dish: { label: "Đồ ăn" },
+  veg: { label: "Rau củ" },
   fruit: { label: "Trái cây" },
   drink: { label: "Đồ uống" },
 };
@@ -39,7 +40,7 @@ const UNITS = [
   "hộp", "gói", "bịch", "túi", "chai", "lon", "vỉ", "khay", "hũ", "thùng",
   "chén", "tô", "ly", "muỗng", "thìa", "phần", "suất",
 ];
-const CATS = ["Ăn sáng", "Cơm", "Bún / phở", "Bánh", "Ăn vặt", "Trái cây", "Sữa", "Nước", "Khác"];
+const CATS = ["Ăn sáng", "Cơm", "Bún / phở", "Bánh", "Ăn vặt", "Rau củ", "Trái cây", "Sữa", "Nước", "Khác"];
 const WEEKDAY = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 
 // ---------- tiện ích ----------
@@ -236,7 +237,8 @@ function planChip(p) {
   if (!f) return "";
   const extra =
     f.unit || p.servings !== 1 ? ` <small>${fmtQty(p.servings)}${f.unit ? " " + esc(f.unit) : ""}</small>` : "";
-  return `<button class="chip k-${f.kind}" data-plan="${p.id}">${foodIcon(f)}${esc(f.name)}${extra}</button>`;
+  const note = p.note ? `<small class="pn">📝 ${esc(p.note)}</small>` : "";
+  return `<button class="chip k-${f.kind}" data-plan="${p.id}">${foodIcon(f)}${esc(f.name)}${extra}${note}</button>`;
 }
 
 function renderPlan() {
@@ -291,7 +293,7 @@ function openPicker(date, meal) {
   let kind = "all";
   const sh = openSheet(`${sheetHead(`${dayName(date)} · ${mealLabel(meal)}`)}
     <input type="search" id="pk-q" placeholder="Tìm món..." />
-    <div class="filter" id="pk-k">${["all", "dish", "fruit", "drink"]
+    <div class="filter" id="pk-k">${["all", ...Object.keys(KIND)]
       .map((k) => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${k === "all" ? "Tất cả" : KIND[k].label}</button>`)
       .join("")}</div>
     <div class="sug" id="pk-sug"></div>
@@ -327,7 +329,7 @@ function openPicker(date, meal) {
       const fs = ids.map((id) => state.byId.get(id)).filter(Boolean);
       if (fs.length && $("#pk-sug", sh)) {
         $("#pk-sug", sh).innerHTML = `<span class="hint">🎲 Gợi ý:</span>` +
-          fs.map((f) => `<button class="chip k-dish" data-id="${f.id}">${foodIcon(f)}${esc(f.name)}</button>`).join("");
+          fs.map((f) => `<button class="chip k-${f.kind}" data-id="${f.id}">${foodIcon(f)}${esc(f.name)}</button>`).join("");
       }
     })
     .catch(() => {});
@@ -354,6 +356,7 @@ function openPlanEntry(id) {
         <label>Bữa<select name="meal">${MEALS.map(([m, l]) => `<option value="${m}"${m === p.meal ? " selected" : ""}>${l}</option>`).join("")}</select></label>
       </div>
       <label>Ngày<input type="date" name="date" value="${p.date}" required /></label>
+      <label>Ghi chú<input name="note" maxlength="200" placeholder="VD: ăn ở quán, mua cho con..." value="${esc(p.note)}" /></label>
       ${f.note ? `<div class="note">${esc(f.note)}</div>` : ""}
       <div class="actions">
         <button type="button" class="ghost danger" id="pe-del">Bỏ khỏi thực đơn</button>
@@ -367,7 +370,7 @@ function openPlanEntry(id) {
     const servings = parseNum(fd.get("servings"));
     if (!(servings > 0)) return toast("Số lượng không hợp lệ.");
     busy(e.submitter, async () => {
-      await api(`/api/plan/${id}`, { method: "PUT", body: { servings, meal: fd.get("meal"), date: fd.get("date") } });
+      await api(`/api/plan/${id}`, { method: "PUT", body: { servings, meal: fd.get("meal"), date: fd.get("date"), note: fd.get("note") } });
       haptic();
       closeSheet();
       await loadPlan();
@@ -533,7 +536,7 @@ function foodSub(f) {
 function renderLib() {
   const counts = { all: state.foods.length };
   for (const f of state.foods) counts[f.kind] = (counts[f.kind] ?? 0) + 1;
-  $("#l-kinds").innerHTML = ["all", "dish", "fruit", "drink"]
+  $("#l-kinds").innerHTML = ["all", ...Object.keys(KIND)]
     .map((k) => `<button data-k="${k}" class="${k === state.libKind ? "on" : ""}">${k === "all" ? "Tất cả" : KIND[k].label} <small>${counts[k] ?? 0}</small></button>`)
     .join("");
   const q = norm($("#l-q").value);

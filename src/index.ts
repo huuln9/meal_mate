@@ -214,7 +214,7 @@ async function menuText(db: D1Database, date: string, title: string): Promise<st
   const rows = (
     await db
       .prepare(
-        "SELECT p.meal, p.servings, f.name, f.unit FROM plan p " +
+        "SELECT p.meal, p.servings, p.note, f.name, f.unit FROM plan p " +
           "JOIN foods f ON f.id = p.food_id WHERE p.date = ? ORDER BY p.id",
       )
       .bind(date)
@@ -227,7 +227,7 @@ async function menuText(db: D1Database, date: string, title: string): Promise<st
       .filter((r) => r.meal === m)
       .map((r) => {
         const extra = r.unit || r.servings !== 1 ? ` ${fmtQty(r.servings)}${r.unit ? " " + r.unit : ""}` : "";
-        return `${escapeHtml(r.name)}${extra}`;
+        return `${escapeHtml(r.name)}${extra}${r.note ? ` <i>(${escapeHtml(r.note)})</i>` : ""}`;
       });
     return `<b>${MEAL_LABEL[m as keyof typeof MEAL_LABEL]}:</b> ${items.join(", ")}`;
   });
@@ -321,7 +321,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
   if (path === "/api/plan" && method === "GET") {
     const [from, to] = dateRange(q.get("from"), q.get("to"));
     const r = await db
-      .prepare("SELECT id, date, meal, food_id, servings FROM plan WHERE date BETWEEN ? AND ? ORDER BY date, id")
+      .prepare("SELECT id, date, meal, food_id, servings, note FROM plan WHERE date BETWEEN ? AND ? ORDER BY date, id")
       .bind(from, to)
       .all();
     return json(r.results);
@@ -333,8 +333,8 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     if (!food) throw new HttpError(404, "Không tìm thấy món.");
     const servings = num(body.servings, "Số lượng", { min: 0.01, max: 1000 }) ?? 1;
     const r = await db
-      .prepare("INSERT INTO plan (date, meal, food_id, servings) VALUES (?, ?, ?, ?)")
-      .bind(body.date, body.meal, body.food_id, servings)
+      .prepare("INSERT INTO plan (date, meal, food_id, servings, note) VALUES (?, ?, ?, ?, ?)")
+      .bind(body.date, body.meal, body.food_id, servings, str(body.note, 200, "Ghi chú"))
       .run();
     return json({ id: r.meta.last_row_id }, 201);
   }
@@ -346,8 +346,8 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     if (!offset) throw new HttpError(400, "Ngày nguồn và đích trùng nhau.");
     const r = await db
       .prepare(
-        "INSERT INTO plan (date, meal, food_id, servings) " +
-          "SELECT date(date, ?), meal, food_id, servings FROM plan WHERE date BETWEEN ? AND ? ORDER BY date, id",
+        "INSERT INTO plan (date, meal, food_id, servings, note) " +
+          "SELECT date(date, ?), meal, food_id, servings, note FROM plan WHERE date BETWEEN ? AND ? ORDER BY date, id",
       )
       .bind(`${offset >= 0 ? "+" : ""}${offset} days`, body.from, addDays(body.from, days - 1))
       .run();
@@ -359,9 +359,13 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
       const servings = num(body?.servings, "Số lượng", { min: 0.01, max: 1000, required: true });
       if (body.meal != null && !MEALS.includes(body.meal)) throw new HttpError(400, "Bữa không hợp lệ.");
       if (body.date != null && !isDate(body.date)) throw new HttpError(400, "Ngày không hợp lệ.");
+      const note = body.note !== undefined ? str(body.note, 200, "Ghi chú") : undefined;
       await db
-        .prepare("UPDATE plan SET servings = ?, meal = COALESCE(?, meal), date = COALESCE(?, date) WHERE id = ?")
-        .bind(servings, body.meal ?? null, body.date ?? null, id)
+        .prepare(
+          "UPDATE plan SET servings = ?, meal = COALESCE(?, meal), date = COALESCE(?, date), " +
+            "note = CASE WHEN ? THEN ? ELSE note END WHERE id = ?",
+        )
+        .bind(servings, body.meal ?? null, body.date ?? null, note !== undefined ? 1 : 0, note ?? null, id)
         .run();
       return json({ id });
     }
@@ -501,7 +505,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
           ["category", "unit", "price", "place", "note"].map(x).join(", ") + " FROM json_each(?)",
       ).bind(foods),
       db.prepare(
-        `INSERT INTO plan (id, date, meal, food_id, servings) SELECT ${["id", "date", "meal", "food_id", "servings"].map(x).join(", ")} FROM json_each(?)`,
+        `INSERT INTO plan (id, date, meal, food_id, servings, note) SELECT ${["id", "date", "meal", "food_id", "servings", "note"].map(x).join(", ")} FROM json_each(?)`,
       ).bind(plan),
       db.prepare(
         "INSERT INTO shopping (id, food_id, name, qty, unit, category, note, est, price, source, bought_at, cleared, created_at) SELECT " +
@@ -518,7 +522,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 async function exportAll(db: D1Database) {
   const [{ foods }, plan, shopping] = await Promise.all([
     loadFoods(db),
-    db.prepare("SELECT id, date, meal, food_id, servings FROM plan ORDER BY date, id").all(),
+    db.prepare("SELECT id, date, meal, food_id, servings, note FROM plan ORDER BY date, id").all(),
     db.prepare("SELECT * FROM shopping ORDER BY id").all(),
   ]);
   return { app: "meal-mate", exported_at: new Date().toISOString(), foods, plan: plan.results, shopping: shopping.results };

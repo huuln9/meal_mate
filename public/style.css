@@ -12,6 +12,7 @@
   --ok: #2fa84f;
   --danger: var(--tg-theme-destructive-text-color, #e24b4a);
   --k-dish: #e8833a;
+  --k-veg: #2f9e44;
   --k-fruit: #d9480f;
   --k-drink: #1c7ed6;
   --k-ingredient: #2f9e44;
@@ -111,11 +112,14 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
   background: var(--hint); line-height: 1;
 }
 .fl.k-dish { background: var(--k-dish); }
+.fl.k-veg { background: var(--k-veg); }
 .fl.k-fruit { background: var(--k-fruit); }
 .fl.k-drink { background: var(--k-drink); }
 .sh-h .fi { width: 28px; height: 28px; border-radius: 8px; font-size: 14px; }
 .k-dish { border-left-color: var(--k-dish); }
+.k-veg { border-left-color: var(--k-veg); }
 .k-fruit { border-left-color: var(--k-fruit); }
+.pn { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
 .k-drink { border-left-color: var(--k-drink); }
 .add {
   border: 1px dashed var(--line-strong); background: transparent; color: var(--hint); border-radius: 16px;

@@ -7,3 +7,4 @@ INSERT INTO foods (id, name, kind, category, unit, price) VALUES
   (6, 'Chuối', 'fruit', 'Trái cây', 'nải', 30000),
   (7, 'Sữa chua', 'drink', 'Sữa', 'hũ', 7000),
   (8, 'Trà sữa', 'drink', 'Nước', 'ly', 35000);
+INSERT INTO foods (id, name, kind, category, unit, price) VALUES (9, 'Rau muống', 'veg', 'Rau củ', 'bó', 10000), (10, 'Cà chua', 'veg', 'Rau củ', 'kg', 25000);
