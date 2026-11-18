@@ -17,6 +17,10 @@ database_name = "meal-mate"
 # Thay bằng Database ID lấy trên trang D1 của Cloudflare.
 database_id = "afe01148-6670-4525-a286-941e13281049"
 
+# Lưu log để xem lỗi ở tab Observability (free: 3 ngày).
+[observability]
+enabled = true
+
 # 13:00 UTC = 20:00 giờ VN: bot nhắn thực đơn ngày mai. Xoá 2 dòng này nếu không cần nhắc.
 [triggers]
 crons = ["0 13 * * *"]
