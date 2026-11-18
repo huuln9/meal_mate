@@ -28,13 +28,18 @@ if (tg) {
 
 // ---------- hằng số ----------
 const KIND = {
-  dish: { label: "Món ăn", emoji: "🍲" },
-  fruit: { label: "Trái cây", emoji: "🍎" },
-  drink: { label: "Đồ uống", emoji: "🥤" },
-  ingredient: { label: "Nguyên liệu", emoji: "🥬" },
+  dish: { label: "Món ăn" },
+  fruit: { label: "Trái cây" },
+  drink: { label: "Đồ uống" },
+  ingredient: { label: "Nguyên liệu" },
 };
-const MEALS = [["sang", "Sáng"], ["trua", "Trưa"], ["toi", "Tối"], ["phu", "Phụ"]];
-const UNITS = ["kg", "g", "lạng", "bó", "củ", "quả", "trái", "con", "miếng", "hộp", "gói", "chai", "lon", "lít", "ml", "vỉ", "nải", "túi", "muỗng"];
+const MEALS = [["sang", "Sáng"], ["phu_sang", "Phụ sáng"], ["trua", "Trưa"], ["phu", "Phụ chiều"], ["toi", "Tối"], ["phu_toi", "Phụ tối"]];
+const UNITS = [
+  "kg", "g", "lạng", "lít", "ml",
+  "cái", "ổ", "quả", "trái", "củ", "bó", "cây", "nhánh", "tép", "con", "miếng", "lát", "khứa", "nải", "buồng",
+  "hộp", "gói", "bịch", "túi", "chai", "lon", "vỉ", "khay", "hũ", "thùng",
+  "chén", "tô", "ly", "muỗng", "thìa", "phần", "suất",
+];
 const CAT_BUY = ["Rau củ", "Thịt", "Cá & hải sản", "Trứng & sữa", "Đồ khô", "Gia vị", "Trái cây", "Đồ uống", "Khác"];
 const CAT_DISH = ["Món mặn", "Canh", "Xào", "Rau", "Ăn sáng", "Món chay", "Lẩu", "Tráng miệng"];
 const WEEKDAY = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
@@ -177,7 +182,38 @@ async function loadFoods() {
   $("#dl-ing").innerHTML = opts(foods.filter((f) => f.kind !== "dish").map((f) => f.name));
   $("#dl-buy").innerHTML = $("#dl-ing").innerHTML;
 }
-const foodEmoji = (f) => f?.emoji || KIND[f?.kind]?.emoji || "🍽";
+/** Ảnh của món, chưa có ảnh thì hiện chữ cái đầu trên nền màu theo loại. */
+const initial = (name) => ([...String(name ?? "").trim()][0] ?? "?").toUpperCase();
+const imgUrl = (f) => `/api/img/${f.id}?v=${encodeURIComponent(f.img_v)}`;
+function foodIcon(f) {
+  if (!f) return "";
+  return f.img_v
+    ? `<img class="fi" src="${imgUrl(f)}" alt="" loading="lazy" />`
+    : `<span class="fi fl k-${f.kind}">${esc(initial(f.name))}</span>`;
+}
+
+/** Cắt ảnh vuông ở giữa, thu nhỏ còn size×size, nén JPEG. */
+async function resizeImage(file, size = 320) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("Không đọc được ảnh này."));
+      i.src = url;
+    });
+    const s = Math.min(img.naturalWidth, img.naturalHeight);
+    const c = document.createElement("canvas");
+    c.width = c.height = size;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, size, size);
+    ctx.drawImage(img, (img.naturalWidth - s) / 2, (img.naturalHeight - s) / 2, s, s, 0, 0, size, size);
+    return c.toDataURL("image/jpeg", 0.82);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 // ---------- tabs ----------
 let currentTab = "plan";
@@ -211,7 +247,7 @@ function planChip(p) {
     f.kind === "dish"
       ? p.servings !== f.servings ? ` <small>×${fmtQty(p.servings)}</small>` : ""
       : ` <small>${fmtQty(p.servings)}${f.unit ? " " + esc(f.unit) : ""}</small>`;
-  return `<button class="chip k-${f.kind}" data-plan="${p.id}">${esc(foodEmoji(f))} ${esc(f.name)}${extra}</button>`;
+  return `<button class="chip k-${f.kind}" data-plan="${p.id}">${foodIcon(f)}${esc(f.name)}${extra}</button>`;
 }
 
 function renderPlan() {
@@ -276,7 +312,7 @@ function openPicker(date, meal) {
     const q = norm($("#pk-q", sh).value);
     const list = state.foods.filter((f) => (kind === "all" || f.kind === kind) && (!q || norm(f.name).includes(q)));
     $("#pk-list", sh).innerHTML =
-      list.map((f) => `<button class="item" data-id="${f.id}"><span class="emo">${esc(foodEmoji(f))}</span>
+      list.map((f) => `<button class="item" data-id="${f.id}"><span class="emo">${foodIcon(f)}</span>
         <span class="nm">${esc(f.name)}<span class="hint">${esc(foodSub(f))}</span></span></button>`).join("") ||
       `<p class="hint empty">Chưa có mục nào${q ? " khớp" : ""}. Bấm "Tạo món mới".</p>`;
   };
@@ -302,7 +338,7 @@ function openPicker(date, meal) {
       const fs = ids.map((id) => state.byId.get(id)).filter(Boolean);
       if (fs.length && $("#pk-sug", sh)) {
         $("#pk-sug", sh).innerHTML = `<span class="hint">🎲 Gợi ý:</span>` +
-          fs.map((f) => `<button class="chip k-dish" data-id="${f.id}">${esc(foodEmoji(f))} ${esc(f.name)}</button>`).join("");
+          fs.map((f) => `<button class="chip k-dish" data-id="${f.id}">${foodIcon(f)}${esc(f.name)}</button>`).join("");
       }
     })
     .catch(() => {});
@@ -322,7 +358,7 @@ function openPlanEntry(id) {
   const f = p && state.byId.get(p.food_id);
   if (!f) return;
   const isDish = f.kind === "dish";
-  const sh = openSheet(`${sheetHead(`${esc(foodEmoji(f))} ${esc(f.name)}`)}
+  const sh = openSheet(`${sheetHead(`${foodIcon(f)} ${esc(f.name)}`)}
     <form id="pe" class="form">
       <div class="f2">
         <label>${isDish ? `Khẩu phần <span class="hint">(công thức: ${f.servings})</span>` : `Số lượng${f.unit ? " (" + esc(f.unit) + ")" : ""}`}
@@ -532,7 +568,7 @@ function renderLib() {
   const q = norm($("#l-q").value);
   const list = state.foods.filter((f) => (state.libKind === "all" || f.kind === state.libKind) && (!q || norm(f.name).includes(q)));
   $("#lib-list").innerHTML =
-    list.map((f) => `<button class="item" data-id="${f.id}"><span class="emo">${esc(foodEmoji(f))}</span>
+    list.map((f) => `<button class="item" data-id="${f.id}"><span class="emo">${foodIcon(f)}</span>
       <span class="nm">${esc(f.name)}<span class="hint">${esc(foodSub(f))}</span></span></button>`).join("") ||
     `<p class="hint empty">${state.foods.length ? "Không tìm thấy." : "Thư viện trống. Bấm “+ Thêm” để tạo món đầu tiên."}</p>`;
 }
@@ -560,7 +596,7 @@ function recipeRow(r = {}) {
 }
 
 function openFoodEditor(id, opts = {}) {
-  const f = id ? state.byId.get(id) : { kind: opts.kind || "dish", servings: 2 };
+  const f = id ? state.byId.get(id) : { kind: opts.kind || "dish", servings: 1 };
   if (!f) return;
   const rec = (id ? state.recipes.get(id) ?? [] : []).map((r) => {
     const i = state.byId.get(r.ingredient_id);
@@ -569,11 +605,15 @@ function openFoodEditor(id, opts = {}) {
   const sh = openSheet(`${sheetHead(id ? "Sửa" : "Thêm vào thư viện")}
     <form id="fe" class="form" autocomplete="off">
       <div class="seg" id="fe-kind">${Object.entries(KIND)
-        .map(([k, v]) => `<button type="button" data-k="${k}" class="${k === f.kind ? "on" : ""}">${v.emoji} ${v.label}</button>`)
+        .map(([k, v]) => `<button type="button" data-k="${k}" class="${k === f.kind ? "on" : ""}">${v.label}</button>`)
         .join("")}</div>
       <div class="f-name">
-        <input name="emoji" class="emo-in" maxlength="8" placeholder="${KIND[f.kind].emoji}" value="${esc(f.emoji)}" aria-label="Emoji" />
-        <input name="name" maxlength="60" placeholder="Tên" value="${esc(f.name)}" required />
+        <label class="photo" title="Chọn ảnh"><span id="fe-pv"></span><input type="file" accept="image/*" id="fe-photo" hidden /></label>
+        <div class="f-col">
+          <input name="name" maxlength="60" placeholder="Tên" value="${esc(f.name)}" required />
+          <div class="photo-act"><span class="hint">Bấm ô vuông để chọn ảnh</span>
+            <button type="button" class="link danger" id="fe-photo-del" hidden>Bỏ ảnh</button></div>
+        </div>
       </div>
       <div class="f2">
         <label class="w-recipe">Khẩu phần<input name="servings" type="number" min="1" max="50" value="${f.servings ?? 1}" /></label>
@@ -603,9 +643,35 @@ function openFoodEditor(id, opts = {}) {
     $$(".w-recipe", sh).forEach((el) => (el.hidden = !recipeOn));
     $$(".w-buy", sh).forEach((el) => (el.hidden = kind === "dish"));
     $('[name="category"]', sh).setAttribute("list", kind === "dish" ? "dl-cat-dish" : "dl-cat-buy");
-    $('[name="emoji"]', sh).placeholder = KIND[kind].emoji;
+    renderPhoto();
+  };
+  // Ảnh: undefined = giữ nguyên, chuỗi dataURL = ảnh mới, null = bỏ ảnh.
+  let photo;
+  const renderPhoto = () => {
+    const name = $('[name="name"]', sh).value;
+    const src = photo ?? (photo === undefined && f.img_v ? imgUrl(f) : null);
+    $("#fe-pv", sh).innerHTML = src
+      ? `<img src="${src}" alt="" />`
+      : `<span class="fi fl k-${kind}">${esc(initial(name))}</span>`;
+    $("#fe-photo-del", sh).hidden = !src;
   };
   applyKind();
+  $('[name="name"]', sh).addEventListener("input", renderPhoto);
+  $("#fe-photo", sh).onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      photo = await resizeImage(file);
+      renderPhoto();
+    } catch (err) {
+      $("#fe-err", sh).textContent = err.message;
+    }
+  };
+  $("#fe-photo-del", sh).onclick = () => {
+    photo = null;
+    renderPhoto();
+  };
   $("#fe-kind", sh).onclick = (e) => {
     const b = e.target.closest("button");
     if (!b) return;
@@ -642,7 +708,6 @@ function openFoodEditor(id, opts = {}) {
     const body = {
       kind,
       name: fd.get("name"),
-      emoji: fd.get("emoji"),
       category: fd.get("category"),
       servings: kind === "dish" || kind === "drink" ? fd.get("servings") : 1,
       unit: kind === "dish" ? "" : fd.get("unit"),
@@ -654,6 +719,8 @@ function openFoodEditor(id, opts = {}) {
     busy(e.submitter, async () => {
       try {
         const saved = await api(id ? `/api/foods/${id}` : "/api/foods", { method: id ? "PUT" : "POST", body });
+        if (photo) await api(`/api/foods/${saved.id}/image`, { method: "POST", body: { data: photo } });
+        else if (photo === null) await api(`/api/foods/${saved.id}/image`, { method: "DELETE" });
         haptic();
         await loadFoods();
         closeSheet();

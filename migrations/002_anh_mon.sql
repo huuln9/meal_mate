@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS food_images (food_id INTEGER PRIMARY KEY REFERENCES foods(id) ON DELETE CASCADE, mime TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')));

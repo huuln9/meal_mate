@@ -3,9 +3,11 @@
 export const KINDS = ["dish", "fruit", "drink", "ingredient"] as const;
 export type Kind = (typeof KINDS)[number];
 
-export const MEALS = ["sang", "trua", "toi", "phu"] as const;
+export const MEALS = ["sang", "phu_sang", "trua", "phu", "toi", "phu_toi"] as const;
 export type Meal = (typeof MEALS)[number];
-export const MEAL_LABEL: Record<Meal, string> = { sang: "Sáng", trua: "Trưa", toi: "Tối", phu: "Phụ" };
+export const MEAL_LABEL: Record<Meal, string> = {
+  sang: "Sáng", phu_sang: "Phụ sáng", trua: "Trưa", phu: "Phụ chiều", toi: "Tối", phu_toi: "Phụ tối",
+};
 
 export interface Food {
   id: number;

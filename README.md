@@ -6,8 +6,8 @@ Cùng kiến trúc với `bida_pool`, chạy chung tài khoản Cloudflare free 
 ## Chức năng
 
 - **Thư viện**: món ăn, trái cây, đồ uống, nguyên liệu. Món ăn có công thức (nguyên liệu + định lượng cho N khẩu phần).
-  Gõ tên nguyên liệu chưa có thì tự tạo. Tìm kiếm gõ không dấu cũng được.
-- **Thực đơn tuần**: bấm `+` ở từng bữa (Sáng / Trưa / Tối / Phụ) để thêm món, có 🎲 gợi ý món chưa ăn mấy ngày gần đây.
+  Gõ tên nguyên liệu chưa có thì tự tạo. Mỗi món có thể gắn 1 ảnh (tự cắt vuông, nén nhỏ); chưa có ảnh thì hiện chữ cái đầu. Tìm kiếm gõ không dấu cũng được.
+- **Thực đơn tuần**: bấm `+` ở từng bữa (Sáng / Phụ sáng / Trưa / Phụ chiều / Tối / Phụ tối) để thêm món, có 🎲 gợi ý món chưa ăn mấy ngày gần đây.
   Bấm vào món để đổi khẩu phần, chuyển bữa / ngày, xem nguyên liệu đã nhân theo khẩu phần. Chép thực đơn tuần trước.
 - **Đi chợ**: tự tính danh sách từ thực đơn trong khoảng ngày (cộng dồn nguyên liệu, nhóm theo Rau củ / Thịt...),
   có giá ước tính. Tick đã mua, nhập tiền thực trả (nghìn đồng) → giá tham khảo tự cập nhật. Thêm tay, gửi danh sách vào Telegram.
@@ -67,10 +67,21 @@ https://meal-mate.<tên-bạn>.workers.dev/bot/setup?key=<WEBHOOK_SECRET>
 
 Thấy 3 dòng `"ok": true` là xong. Vào chat với bot, bấm nút **Meal Mate** cạnh ô chat để mở app.
 
+## Cập nhật database (migrations)
+Khi code đổi cấu trúc bảng, chạy file trong `migrations/` **một lần** trên D1 Console (dán từng dòng nếu báo lỗi):
+
+| File | Nội dung |
+|---|---|
+| `001_nam_bua.sql` | Chia ngày thành 6 bữa (thêm Phụ sáng, Phụ tối; bữa "Phụ" cũ thành Phụ chiều) |
+| `002_anh_mon.sql` | Bảng `food_images` lưu ảnh món |
+
+DB mới tạo từ `schema.sql` đã có sẵn, không cần chạy migration.
+
 ## Ghi chú
 - Nhắc 20:00 cấu hình ở `[triggers]` trong `wrangler.toml` (giờ UTC). Xoá khối đó nếu không muốn nhắc.
 - Đơn vị của nguyên liệu do nguyên liệu quyết định: công thức nhập `0,5` cho Thịt (kg) nghĩa là 0,5 kg.
 - Trái cây / đồ uống chỉ vào danh sách đi chợ khi có đơn vị hoặc giá (VD “Trà đá” không có thì bỏ qua).
+- File sao lưu không chứa ảnh món; khôi phục từ file thì phải chọn lại ảnh.
 - Hạn mức free Cloudflare (100k request/ngày, D1 5 GB) dùng chung với bida_pool vẫn dư rất nhiều.
 
 ## Chạy thử trên máy (cần Node.js 22.6+)

@@ -105,6 +105,38 @@ async function loadFoods(db: D1Database) {
   return { foods: f.results, recipes: r.results };
 }
 
+/** Phiên bản ảnh của từng món: { food_id: updated_at }. Trống nếu chưa chạy migration 002. */
+async function imageVersions(db: D1Database): Promise<Record<number, string>> {
+  try {
+    const r = await db.prepare("SELECT food_id, updated_at FROM food_images").all<{ food_id: number; updated_at: string }>();
+    return Object.fromEntries(r.results.map((x) => [x.food_id, x.updated_at]));
+  } catch {
+    return {};
+  }
+}
+
+const IMG_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const IMG_MAX_BYTES = 300 * 1024;
+
+function b64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
+  const bin = atob(b64);
+  const out = new Uint8Array(new ArrayBuffer(bin.length));
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** Ảnh món ăn: không cần đăng nhập (thẻ <img> không gửi kèm header được), cache lâu vì URL có ?v=. */
+async function serveImage(db: D1Database, id: number): Promise<Response> {
+  let row: { mime: string; data: string } | null = null;
+  try {
+    row = await db.prepare("SELECT mime, data FROM food_images WHERE food_id = ?").bind(id).first();
+  } catch {}
+  if (!row) return new Response("Not found", { status: 404 });
+  return new Response(b64ToBytes(row.data), {
+    headers: { "content-type": row.mime, "cache-control": "public, max-age=31536000, immutable" },
+  });
+}
+
 // ---------- thư viện món ----------
 async function saveFood(db: D1Database, body: any, id: number | null) {
   const kind = body?.kind as Kind;
@@ -252,7 +284,7 @@ async function menuText(db: D1Database, date: string, title: string): Promise<st
           r.kind === "dish"
             ? r.servings !== r.base ? ` ×${fmtQty(r.servings)}` : ""
             : ` ${fmtQty(r.servings)}${r.unit ? " " + r.unit : ""}`;
-        return `${r.emoji ? r.emoji + " " : ""}${escapeHtml(r.name)}${extra}`;
+        return `${escapeHtml(r.name)}${extra}`;
       });
     return `<b>${MEAL_LABEL[m as keyof typeof MEAL_LABEL]}:</b> ${items.join(", ")}`;
   });
@@ -299,7 +331,39 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
   if (path === "/api/me" && method === "GET") return json({ user, today: vnToday() });
 
   // --- thư viện ---
-  if (path === "/api/foods" && method === "GET") return json(await loadFoods(db));
+  if (path === "/api/foods" && method === "GET") {
+    const [data, img] = await Promise.all([loadFoods(db), imageVersions(db)]);
+    return json({ ...data, foods: data.foods.map((f) => ({ ...f, img_v: img[f.id] ?? null })) });
+  }
+  if ((m = path.match(/^\/api\/foods\/(\d+)\/image$/))) {
+    const id = Number(m[1]);
+    const exists = await db.prepare("SELECT id FROM foods WHERE id = ?").bind(id).first();
+    if (!exists) throw new HttpError(404, "Không tìm thấy món.");
+    if (method === "POST") {
+      const match = String(body?.data ?? "").match(/^data:(image\/[a-z]+);base64,([A-Za-z0-9+/=]+)$/);
+      if (!match || !IMG_TYPES.includes(match[1])) throw new HttpError(400, "Ảnh phải là JPG, PNG hoặc WebP.");
+      if (match[2].length * 0.75 > IMG_MAX_BYTES) throw new HttpError(400, "Ảnh quá lớn (tối đa 300 KB).");
+      try {
+        await db
+          .prepare(
+            "INSERT INTO food_images (food_id, mime, data, updated_at) VALUES (?, ?, ?, datetime('now')) " +
+              "ON CONFLICT(food_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, updated_at = excluded.updated_at",
+          )
+          .bind(id, match[1], match[2])
+          .run();
+      } catch (e) {
+        if (String(e).includes("no such table")) {
+          throw new HttpError(500, "Chưa tạo bảng food_images. Chạy migrations/002_anh_mon.sql trên D1 trước.");
+        }
+        throw e;
+      }
+      return json({ ok: true });
+    }
+    if (method === "DELETE") {
+      await db.prepare("DELETE FROM food_images WHERE food_id = ?").bind(id).run().catch(() => {});
+      return json({ ok: true });
+    }
+  }
   if (path === "/api/foods" && method === "POST") return json(await saveFood(db, body, null), 201);
   if ((m = path.match(/^\/api\/foods\/(\d+)$/))) {
     const id = Number(m[1]);
@@ -607,6 +671,8 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     try {
+      const img = url.pathname.match(/^\/api\/img\/(\d+)$/);
+      if (img && req.method === "GET") return await serveImage(env.DB, Number(img[1]));
       if (url.pathname.startsWith("/api/")) return await api(req, env, url);
       if (url.pathname.startsWith("/bot/")) return await bot(req, env, url);
       return env.ASSETS.fetch(req);
