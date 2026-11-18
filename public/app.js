@@ -28,10 +28,9 @@ if (tg) {
 
 // ---------- hằng số ----------
 const KIND = {
-  dish: { label: "Món ăn" },
+  dish: { label: "Đồ ăn" },
   fruit: { label: "Trái cây" },
   drink: { label: "Đồ uống" },
-  ingredient: { label: "Nguyên liệu" },
 };
 const MEALS = [["sang", "Sáng"], ["phu_sang", "Phụ sáng"], ["trua", "Trưa"], ["phu", "Phụ chiều"], ["toi", "Tối"], ["phu_toi", "Phụ tối"]];
 const UNITS = [
@@ -40,8 +39,7 @@ const UNITS = [
   "hộp", "gói", "bịch", "túi", "chai", "lon", "vỉ", "khay", "hũ", "thùng",
   "chén", "tô", "ly", "muỗng", "thìa", "phần", "suất",
 ];
-const CAT_BUY = ["Rau củ", "Thịt", "Cá & hải sản", "Trứng & sữa", "Đồ khô", "Gia vị", "Trái cây", "Đồ uống", "Khác"];
-const CAT_DISH = ["Món mặn", "Canh", "Xào", "Rau", "Ăn sáng", "Món chay", "Lẩu", "Tráng miệng"];
+const CATS = ["Ăn sáng", "Cơm", "Bún / phở", "Bánh", "Ăn vặt", "Trái cây", "Sữa", "Nước", "Khác"];
 const WEEKDAY = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 
 // ---------- tiện ích ----------
@@ -90,7 +88,6 @@ const addMonths = (ym, n) => {
 const state = {
   foods: [],
   byId: new Map(),
-  recipes: new Map(), // dish_id → [{ingredient_id, qty}]
   week: weekStart(todayStr()),
   plan: [],
   shop: [],
@@ -168,22 +165,13 @@ const sheetHead = (title) => `<div class="sh-h"><b>${title}</b><button type="but
 
 // ---------- thư viện (dữ liệu dùng chung) ----------
 async function loadFoods() {
-  const { foods, recipes } = await api("/api/foods");
+  const { foods } = await api("/api/foods");
   state.foods = foods;
   state.byId = new Map(foods.map((f) => [f.id, f]));
-  state.recipes = new Map();
-  for (const r of recipes) {
-    if (!state.recipes.has(r.dish_id)) state.recipes.set(r.dish_id, []);
-    state.recipes.get(r.dish_id).push(r);
-  }
   const opts = (arr) => arr.map((v) => `<option value="${esc(v)}">`).join("");
-  const cats = (kinds, base) =>
-    [...new Set([...base, ...foods.filter((f) => kinds.includes(f.kind) && f.category).map((f) => f.category)])];
   $("#dl-units").innerHTML = opts([...new Set([...UNITS, ...foods.map((f) => f.unit).filter(Boolean)])]);
-  $("#dl-cat-buy").innerHTML = opts(cats(["ingredient", "fruit", "drink"], CAT_BUY));
-  $("#dl-cat-dish").innerHTML = opts(cats(["dish"], CAT_DISH));
-  $("#dl-ing").innerHTML = opts(foods.filter((f) => f.kind !== "dish").map((f) => f.name));
-  $("#dl-buy").innerHTML = $("#dl-ing").innerHTML;
+  $("#dl-cats").innerHTML = opts([...new Set([...CATS, ...foods.map((f) => f.category).filter(Boolean)])]);
+  $("#dl-buy").innerHTML = opts(foods.map((f) => f.name));
 }
 /** Ảnh của món, chưa có ảnh thì hiện chữ cái đầu trên nền màu theo loại. */
 const initial = (name) => ([...String(name ?? "").trim()][0] ?? "?").toUpperCase();
@@ -247,9 +235,7 @@ function planChip(p) {
   const f = state.byId.get(p.food_id);
   if (!f) return "";
   const extra =
-    f.kind === "dish" && !f.unit
-      ? p.servings !== f.servings ? ` <small>×${fmtQty(p.servings)}</small>` : ""
-      : ` <small>${fmtQty(p.servings)}${f.unit ? " " + esc(f.unit) : ""}</small>`;
+    f.unit || p.servings !== 1 ? ` <small>${fmtQty(p.servings)}${f.unit ? " " + esc(f.unit) : ""}</small>` : "";
   return `<button class="chip k-${f.kind}" data-plan="${p.id}">${foodIcon(f)}${esc(f.name)}${extra}</button>`;
 }
 
@@ -302,10 +288,10 @@ $("#w-shop").onclick = (e) => {
 
 // Chọn món cho 1 bữa
 function openPicker(date, meal) {
-  let kind = "dish";
+  let kind = "all";
   const sh = openSheet(`${sheetHead(`${dayName(date)} · ${mealLabel(meal)}`)}
     <input type="search" id="pk-q" placeholder="Tìm món..." />
-    <div class="filter" id="pk-k">${["all", "dish", "fruit", "drink", "ingredient"]
+    <div class="filter" id="pk-k">${["all", "dish", "fruit", "drink"]
       .map((k) => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${k === "all" ? "Tất cả" : KIND[k].label}</button>`)
       .join("")}</div>
     <div class="sug" id="pk-sug"></div>
@@ -360,16 +346,15 @@ function openPlanEntry(id) {
   const p = state.plan.find((x) => x.id === id);
   const f = p && state.byId.get(p.food_id);
   if (!f) return;
-  const isDish = f.kind === "dish";
   const sh = openSheet(`${sheetHead(`${foodIcon(f)} ${esc(f.name)}`)}
     <form id="pe" class="form">
       <div class="f2">
-        <label>${isDish ? `Khẩu phần${f.unit ? " (" + esc(f.unit) + ")" : ""} <span class="hint">(công thức: ${f.servings})</span>` : `Số lượng${f.unit ? " (" + esc(f.unit) + ")" : ""}`}
+        <label>Số lượng${f.unit ? " (" + esc(f.unit) + ")" : ""}
           <input name="servings" inputmode="decimal" value="${fmtQty(p.servings)}" required /></label>
         <label>Bữa<select name="meal">${MEALS.map(([m, l]) => `<option value="${m}"${m === p.meal ? " selected" : ""}>${l}</option>`).join("")}</select></label>
       </div>
       <label>Ngày<input type="date" name="date" value="${p.date}" required /></label>
-      ${recipeSummary(f, p.servings)}
+      ${f.note ? `<div class="note">${esc(f.note)}</div>` : ""}
       <div class="actions">
         <button type="button" class="ghost danger" id="pe-del">Bỏ khỏi thực đơn</button>
         <button type="button" class="ghost" id="pe-open">Sửa món</button>
@@ -396,18 +381,6 @@ function openPlanEntry(id) {
       await loadPlan();
     });
   $("#pe-open", sh).onclick = () => openFoodEditor(f.id);
-}
-
-/** Liệt kê nguyên liệu đã nhân theo khẩu phần. */
-function recipeSummary(f, servings) {
-  const rs = state.recipes.get(f.id) ?? [];
-  if (!rs.length) return f.note ? `<div class="note">${esc(f.note)}</div>` : "";
-  const k = servings / (f.servings || 1);
-  const items = rs.map((r) => {
-    const i = state.byId.get(r.ingredient_id);
-    return `<li>${esc(i?.name)} — ${fmtQty(r.qty * k)}${i?.unit ? " " + esc(i.unit) : ""}</li>`;
-  });
-  return `<div class="note"><b>Nguyên liệu</b><ul>${items.join("")}</ul>${f.note ? esc(f.note) : ""}</div>`;
 }
 
 // =====================================================================
@@ -510,7 +483,7 @@ $("#shop-list").addEventListener("change", (e) => {
   });
 });
 $("#s-name").addEventListener("change", () => {
-  const f = state.foods.find((x) => x.kind !== "dish" && norm(x.name) === norm($("#s-name").value));
+  const f = state.foods.find((x) => norm(x.name) === norm($("#s-name").value));
   if (f?.unit && !$("#s-unit").value) $("#s-unit").value = f.unit;
 });
 $("#s-add").onsubmit = (e) => {
@@ -552,20 +525,15 @@ $("#s-reset").onclick = async (e) => {
 // THƯ VIỆN
 // =====================================================================
 function foodSub(f) {
-  if (f.kind === "dish") {
-    const n = state.recipes.get(f.id)?.length ?? 0;
-    return [f.category, n ? `${n} nguyên liệu` : "chưa có công thức", `${f.servings} ${f.unit || "phần"}`].filter(Boolean).join(" · ");
-  }
   const price = f.price != null ? `${fmtMoney(f.price)}${f.unit ? "/" + f.unit : ""}` : f.unit;
-  const n = state.recipes.get(f.id)?.length;
-  return [f.kind !== "ingredient" ? KIND[f.kind].label : f.category, price, n ? `${n} nguyên liệu` : ""]
-    .filter(Boolean).join(" · ");
+  const kind = KIND[f.kind]?.label;
+  return [kind, f.category !== kind ? f.category : "", price, f.place].filter(Boolean).join(" · ");
 }
 
 function renderLib() {
   const counts = { all: state.foods.length };
   for (const f of state.foods) counts[f.kind] = (counts[f.kind] ?? 0) + 1;
-  $("#l-kinds").innerHTML = ["all", "dish", "fruit", "drink", "ingredient"]
+  $("#l-kinds").innerHTML = ["all", "dish", "fruit", "drink"]
     .map((k) => `<button data-k="${k}" class="${k === state.libKind ? "on" : ""}">${k === "all" ? "Tất cả" : KIND[k].label} <small>${counts[k] ?? 0}</small></button>`)
     .join("");
   const q = norm($("#l-q").value);
@@ -589,22 +557,9 @@ $("#lib-list").onclick = (e) => {
 $("#l-add").onclick = () => openFoodEditor(null, { kind: state.libKind === "all" ? "dish" : state.libKind });
 
 // Thêm / sửa món
-function recipeRow(r = {}) {
-  return `<div class="rrow">
-    <input class="rn" list="dl-ing" placeholder="Nguyên liệu" value="${esc(r.name)}" maxlength="60" />
-    <input class="rq" inputmode="decimal" placeholder="SL" value="${r.qty != null ? fmtQty(r.qty) : ""}" />
-    <input class="ru" list="dl-units" placeholder="ĐV" value="${esc(r.unit)}" maxlength="15" />
-    <button type="button" class="del" aria-label="Xoá dòng">✕</button>
-  </div>`;
-}
-
 function openFoodEditor(id, opts = {}) {
-  const f = id ? state.byId.get(id) : { kind: opts.kind || "dish", servings: 1 };
+  const f = id ? state.byId.get(id) : { kind: opts.kind || "dish" };
   if (!f) return;
-  const rec = (id ? state.recipes.get(id) ?? [] : []).map((r) => {
-    const i = state.byId.get(r.ingredient_id);
-    return { name: i?.name, qty: r.qty, unit: i?.unit };
-  });
   const sh = openSheet(`${sheetHead(id ? "Sửa" : "Thêm vào thư viện")}
     <form id="fe" class="form" autocomplete="off">
       <div class="seg" id="fe-kind">${Object.entries(KIND)
@@ -619,21 +574,14 @@ function openFoodEditor(id, opts = {}) {
         </div>
       </div>
       <div class="f2">
-        <label class="w-recipe">Khẩu phần<input name="servings" type="number" min="1" max="50" value="${f.servings ?? 1}" /></label>
-        <label>Nhóm<input name="category" maxlength="30" value="${esc(f.category)}" /></label>
+        <label>Đơn vị<input name="unit" list="dl-units" maxlength="15" placeholder="ổ, hộp, kg..." value="${esc(f.unit)}" /></label>
+        <label>Giá / đơn vị (nghìn đ)<input name="price" inputmode="decimal" value="${toK(f.price)}" /></label>
       </div>
       <div class="f2">
-        <label><span id="fe-unit-l">Đơn vị</span><input name="unit" list="dl-units" maxlength="15" value="${esc(f.unit)}" /></label>
-        <label class="w-buy">Giá / đơn vị (nghìn đ)<input name="price" inputmode="decimal" value="${toK(f.price)}" /></label>
+        <label>Nhóm<input name="category" list="dl-cats" maxlength="30" value="${esc(f.category)}" /></label>
+        <label>Nơi mua<input name="place" maxlength="60" value="${esc(f.place)}" /></label>
       </div>
-      <label class="w-buy">Nơi hay mua<input name="place" maxlength="60" value="${esc(f.place)}" /></label>
-      <div class="w-recipe">
-        <h3>Nguyên liệu <span class="hint">cho số khẩu phần ở trên</span></h3>
-        <div id="fe-rec">${rec.map(recipeRow).join("")}</div>
-        <button type="button" class="ghost sm" id="fe-addrow">+ Nguyên liệu</button>
-        <p class="hint">Gõ tên chưa có trong thư viện sẽ tự tạo nguyên liệu mới.</p>
-      </div>
-      <label>Ghi chú / cách làm<textarea name="note" rows="4" maxlength="3000">${esc(f.note)}</textarea></label>
+      <label>Ghi chú<textarea name="note" rows="2" maxlength="1000">${esc(f.note)}</textarea></label>
       <p class="err" id="fe-err"></p>
       <div class="actions">
         ${id ? '<button type="button" class="ghost danger" id="fe-del">Xoá</button>' : ""}
@@ -641,14 +589,7 @@ function openFoodEditor(id, opts = {}) {
       </div>
     </form>`, { modal: true });
   let kind = f.kind;
-  const applyKind = () => {
-    const recipeOn = kind === "dish" || kind === "drink";
-    $$(".w-recipe", sh).forEach((el) => (el.hidden = !recipeOn));
-    $$(".w-buy", sh).forEach((el) => (el.hidden = kind === "dish"));
-    $("#fe-unit-l", sh).textContent = kind === "dish" ? "Đơn vị (tô, đĩa, phần...)" : "Đơn vị mua";
-    $('[name="category"]', sh).setAttribute("list", kind === "dish" ? "dl-cat-dish" : "dl-cat-buy");
-    renderPhoto();
-  };
+  const applyKind = () => renderPhoto();
   // Ảnh: undefined = giữ nguyên, chuỗi dataURL = ảnh mới, null = bỏ ảnh.
   let photo;
   const renderPhoto = () => {
@@ -683,42 +624,20 @@ function openFoodEditor(id, opts = {}) {
     $$("#fe-kind button", sh).forEach((x) => x.classList.toggle("on", x === b));
     applyKind();
   };
-  const addRow = () => {
-    $("#fe-rec", sh).insertAdjacentHTML("beforeend", recipeRow());
-    $("#fe-rec .rrow:last-child .rn", sh).focus();
-  };
-  $("#fe-addrow", sh).onclick = addRow;
-  if (!id && kind === "dish") $("#fe-rec", sh).insertAdjacentHTML("beforeend", recipeRow());
-  $("#fe-rec", sh).addEventListener("click", (e) => {
-    if (e.target.closest(".del")) e.target.closest(".rrow").remove();
-  });
-  $("#fe-rec", sh).addEventListener("change", (e) => {
-    if (!e.target.classList.contains("rn")) return;
-    const i = state.foods.find((x) => x.kind !== "dish" && norm(x.name) === norm(e.target.value));
-    const u = e.target.closest(".rrow").querySelector(".ru");
-    if (i?.unit) u.value = i.unit;
-  });
 
   $("#fe", sh).onsubmit = (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const price = parseK(fd.get("price"));
     if (Number.isNaN(price)) return ($("#fe-err", sh).textContent = "Giá không hợp lệ.");
-    const recipe = $$(".rrow", sh)
-      .map((r) => ({ name: $(".rn", r).value.trim(), qty: parseNum($(".rq", r).value), unit: $(".ru", r).value.trim() }))
-      .filter((r) => r.name);
-    const bad = recipe.find((r) => r.qty == null || Number.isNaN(r.qty));
-    if (bad) return ($("#fe-err", sh).textContent = `Nhập số lượng cho "${bad.name}".`);
     const body = {
       kind,
       name: fd.get("name"),
       category: fd.get("category"),
-      servings: kind === "dish" || kind === "drink" ? fd.get("servings") : 1,
       unit: fd.get("unit"),
-      price: kind === "dish" ? null : price,
-      place: kind === "dish" ? "" : fd.get("place"),
+      price,
+      place: fd.get("place"),
       note: fd.get("note"),
-      recipe,
     };
     busy(e.submitter, async () => {
       try {

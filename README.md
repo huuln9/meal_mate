@@ -5,12 +5,13 @@ Cùng kiến trúc với `bida_pool`, chạy chung tài khoản Cloudflare free 
 
 ## Chức năng
 
-- **Thư viện**: món ăn, trái cây, đồ uống, nguyên liệu. Món ăn có công thức (nguyên liệu + định lượng cho N khẩu phần).
-  Gõ tên nguyên liệu chưa có thì tự tạo. Mỗi món có thể gắn 1 ảnh (tự cắt vuông, nén nhỏ); chưa có ảnh thì hiện chữ cái đầu. Tìm kiếm gõ không dấu cũng được.
-- **Thực đơn tuần**: bấm `+` ở từng bữa (Sáng / Phụ sáng / Trưa / Phụ chiều / Tối / Phụ tối) để thêm món, có 🎲 gợi ý món chưa ăn mấy ngày gần đây.
-  Bấm vào món để đổi khẩu phần, chuyển bữa / ngày, xem nguyên liệu đã nhân theo khẩu phần. Chép thực đơn tuần trước.
-- **Đi chợ**: tự tính danh sách từ thực đơn trong khoảng ngày (cộng dồn nguyên liệu, nhóm theo Rau củ / Thịt...),
-  có giá ước tính. Tick đã mua, nhập tiền thực trả (nghìn đồng) → giá tham khảo tự cập nhật. Thêm tay, gửi danh sách vào Telegram.
+- **Thư viện**: 3 loại **Đồ ăn / Trái cây / Đồ uống** — toàn đồ mua sẵn, không cần công thức.
+  Mỗi món: ảnh (tự cắt vuông, nén nhỏ; chưa có ảnh thì hiện chữ cái đầu), tên, đơn vị, giá, nhóm, nơi mua, ghi chú.
+  Tìm kiếm gõ không dấu cũng được.
+- **Thực đơn tuần**: 6 bữa/ngày (Sáng / Phụ sáng / Trưa / Phụ chiều / Tối / Phụ tối). Bấm `+` để thêm món,
+  có 🎲 gợi ý món chưa ăn mấy ngày gần đây. Bấm vào món để đổi số lượng, chuyển bữa / ngày. Chép thực đơn tuần trước.
+- **Đi chợ**: tự cộng số lượng từ thực đơn trong khoảng ngày, nhóm theo Nhóm của món, có giá ước tính.
+  Tick đã mua, nhập tiền thực trả (nghìn đồng) → giá tham khảo tự cập nhật. Thêm tay, gửi danh sách vào Telegram.
   Tạo lại danh sách sẽ trừ phần đã mua, không bị trùng.
 - **Chi tiêu**: tổng chi theo tháng, theo nhóm, món tốn nhiều nhất. Sao lưu (bot gửi file JSON) và khôi phục.
 - **Bot**: `/homnay`, `/mai`, `/dicho`. Mỗi tối 20:00 nhắn thực đơn ngày mai + số món chưa mua.
@@ -21,7 +22,7 @@ Cùng kiến trúc với `bida_pool`, chạy chung tài khoản Cloudflare free 
 ```
 public/          Giao diện Mini App (HTML/CSS/JS thuần)
 src/index.ts     API + bot webhook + nhắc lịch (cron)
-src/planner.ts   Logic tính danh sách đi chợ, ngày tháng, định dạng tiền
+src/planner.ts   Cộng danh sách đi chợ từ thực đơn, ngày tháng, định dạng tiền
 src/telegram.ts  Xác thực initData của Telegram
 schema.sql       Tạo bảng
 seed.sql         Dữ liệu mẫu, chỉ dùng khi chạy thử trên máy
@@ -74,13 +75,13 @@ Khi code đổi cấu trúc bảng, chạy file trong `migrations/` **một lầ
 |---|---|
 | `001_nam_bua.sql` | Chia ngày thành 6 bữa (thêm Phụ sáng, Phụ tối; bữa "Phụ" cũ thành Phụ chiều) |
 | `002_anh_mon.sql` | Bảng `food_images` lưu ảnh món |
+| `003_don_gian.sql` | Bỏ công thức; Món ăn + Nguyên liệu cũ thành Đồ ăn (trùng tên thì gộp) |
+| `004_don_db.sql` | Xoá bảng `recipe_items`, cột `emoji`, `servings` của `foods` (chạy sau 003) |
 
 DB mới tạo từ `schema.sql` đã có sẵn, không cần chạy migration.
 
 ## Ghi chú
 - Nhắc 20:00 cấu hình ở `[triggers]` trong `wrangler.toml` (giờ UTC). Xoá khối đó nếu không muốn nhắc.
-- Đơn vị của nguyên liệu do nguyên liệu quyết định: công thức nhập `0,5` cho Thịt (kg) nghĩa là 0,5 kg.
-- Trái cây / đồ uống chỉ vào danh sách đi chợ khi có đơn vị hoặc giá (VD “Trà đá” không có thì bỏ qua).
 - File sao lưu không chứa ảnh món; khôi phục từ file thì phải chọn lại ảnh.
 - Hạn mức free Cloudflare (100k request/ngày, D1 5 GB) dùng chung với bida_pool vẫn dư rất nhiều.
 

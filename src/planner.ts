@@ -1,7 +1,8 @@
 // Logic thuần (không đụng DB): tính danh sách đi chợ từ thực đơn, ngày tháng, định dạng.
 
-export const KINDS = ["dish", "fruit", "drink", "ingredient"] as const;
+export const KINDS = ["dish", "fruit", "drink"] as const; // dish = Đồ ăn
 export type Kind = (typeof KINDS)[number];
+export const KIND_LABEL: Record<Kind, string> = { dish: "Đồ ăn", fruit: "Trái cây", drink: "Đồ uống" };
 
 export const MEALS = ["sang", "phu_sang", "trua", "phu", "toi", "phu_toi"] as const;
 export type Meal = (typeof MEALS)[number];
@@ -12,14 +13,11 @@ export const MEAL_LABEL: Record<Meal, string> = {
 export interface Food {
   id: number;
   name: string;
-  kind: Kind;
-  emoji?: string | null;
+  kind: string;
   category?: string | null;
   unit?: string | null;
   price?: number | null;
-  servings: number;
 }
-export interface RecipeItem { dish_id: number; ingredient_id: number; qty: number }
 export interface PlanEntry { food_id: number; servings: number }
 export interface Need {
   food_id: number;
@@ -28,54 +26,26 @@ export interface Need {
   category: string;
   qty: number;
   est: number | null;
-  for: string[]; // dùng cho những món nào
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export function defaultCategory(kind: Kind): string {
-  return kind === "fruit" ? "Trái cây" : kind === "drink" ? "Đồ uống" : "Khác";
+export function defaultCategory(kind: string): string {
+  return kind === "fruit" ? "Trái cây" : kind === "drink" ? "Đồ uống" : "Đồ ăn";
 }
 
-/**
- * Cộng dồn nguyên liệu cần mua cho các bữa trong thực đơn.
- * - Món có công thức: nhân định lượng theo (khẩu phần trong thực đơn / khẩu phần của công thức).
- * - Nguyên liệu, hoặc trái cây / đồ uống có đơn vị hay giá, không có công thức: mua chính nó, số lượng = servings.
- * - Món ăn không có công thức (VD: ăn ngoài): bỏ qua.
- */
-export function computeNeeds(foods: Food[], recipes: RecipeItem[], plan: PlanEntry[]): Need[] {
+/** Cộng dồn những thứ cần mua cho các bữa trong thực đơn (mỗi món mua trực tiếp, số lượng = servings). */
+export function computeNeeds(foods: Food[], plan: PlanEntry[]): Need[] {
   const byId = new Map(foods.map((f) => [f.id, f]));
-  const rec = new Map<number, RecipeItem[]>();
-  for (const r of recipes) {
-    const list = rec.get(r.dish_id) ?? [];
-    list.push(r);
-    rec.set(r.dish_id, list);
-  }
-  const acc = new Map<number, { qty: number; for: Set<string> }>();
-  const add = (id: number, qty: number, dish?: string) => {
-    if (!(qty > 0)) return;
-    const a = acc.get(id) ?? { qty: 0, for: new Set<string>() };
-    a.qty += qty;
-    if (dish) a.for.add(dish);
-    acc.set(id, a);
-  };
+  const acc = new Map<number, number>();
   for (const p of plan) {
-    const f = byId.get(p.food_id);
-    if (!f) continue;
-    const rs = rec.get(f.id) ?? [];
-    if (rs.length) {
-      const k = p.servings / (f.servings || 1);
-      for (const r of rs) add(r.ingredient_id, r.qty * k, f.name);
-    } else if (f.kind === "ingredient" || (f.kind !== "dish" && (f.unit || f.price != null))) {
-      // Trái cây / đồ uống chỉ mua khi đã khai báo đơn vị hoặc giá (VD: "Trà đá" thì không).
-      add(f.id, p.servings);
-    }
+    if (!byId.has(p.food_id) || !(p.servings > 0)) continue;
+    acc.set(p.food_id, (acc.get(p.food_id) ?? 0) + p.servings);
   }
   const out: Need[] = [];
-  for (const [id, a] of acc) {
-    const f = byId.get(id);
-    if (!f) continue;
-    const qty = round2(a.qty);
+  for (const [id, total] of acc) {
+    const f = byId.get(id)!;
+    const qty = round2(total);
     out.push({
       food_id: id,
       name: f.name,
@@ -83,7 +53,6 @@ export function computeNeeds(foods: Food[], recipes: RecipeItem[], plan: PlanEnt
       category: f.category || defaultCategory(f.kind),
       qty,
       est: f.price != null ? Math.round(f.price * qty) : null,
-      for: [...a.for],
     });
   }
   return out.sort((x, y) => x.category.localeCompare(y.category, "vi") || x.name.localeCompare(y.name, "vi"));

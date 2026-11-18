@@ -13,7 +13,6 @@ import {
   vnToday,
   type Food,
   type Kind,
-  type RecipeItem,
 } from "./planner";
 import { tgCall, verifyInitData, type TgUser } from "./telegram";
 
@@ -95,14 +94,12 @@ function dateRange(from: unknown, to: unknown, maxDays = 62): [string, string] {
   return [from, to];
 }
 
-const FOOD_COLS = "id, name, kind, emoji, category, unit, price, servings, place, note";
+const FOOD_COLS = "id, name, kind, category, unit, price, place, note";
 
 async function loadFoods(db: D1Database) {
-  const [f, r] = await Promise.all([
-    db.prepare(`SELECT ${FOOD_COLS} FROM foods ORDER BY name`).all<Food & { place: string; note: string }>(),
-    db.prepare("SELECT dish_id, ingredient_id, qty FROM recipe_items").all<RecipeItem>(),
-  ]);
-  return { foods: f.results, recipes: r.results };
+  const f = await db.prepare(`SELECT ${FOOD_COLS} FROM foods ORDER BY name`).all<Food & { place: string; note: string }>();
+  // "ingredient" là loại cũ (trước khi đơn giản hoá), coi như Đồ ăn.
+  return { foods: f.results.map((x) => (x.kind === "ingredient" ? { ...x, kind: "dish" } : x)) };
 }
 
 /** Phiên bản ảnh của từng món: { food_id: updated_at }. Trống nếu chưa chạy migration 002. */
@@ -143,44 +140,12 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
   if (!KINDS.includes(kind)) throw new HttpError(400, "Loại không hợp lệ.");
   const f = {
     name: str(body.name, 60, "Tên", true)!,
-    emoji: str(body.emoji, 8, "Emoji"),
     category: str(body.category, 30, "Nhóm"),
     unit: str(body.unit, 15, "Đơn vị"),
     price: num(body.price, "Giá", { max: 1e8, int: true }),
-    servings: num(body.servings, "Khẩu phần", { min: 1, max: 50, int: true }) ?? 1,
     place: str(body.place, 60, "Nơi mua"),
-    note: str(body.note, 3000, "Ghi chú"),
+    note: str(body.note, 1000, "Ghi chú"),
   };
-  // Kiểm tra công thức trước khi ghi gì vào DB (tránh lưu dở dang).
-  const recipe: any[] = (kind === "dish" || kind === "drink") && Array.isArray(body.recipe) ? body.recipe : [];
-  if (recipe.length > 30) throw new HttpError(400, "Tối đa 30 nguyên liệu.");
-  const all = (
-    await db.prepare("SELECT id, name, kind, unit FROM foods WHERE kind <> 'dish'").all<{
-      id: number; name: string; kind: Kind; unit: string | null;
-    }>()
-  ).results;
-  const findIng = (nm: string) => {
-    const lower = nm.toLowerCase();
-    return all.find((x) => x.name.toLowerCase() === lower && x.kind === "ingredient") ??
-      all.find((x) => x.name.toLowerCase() === lower);
-  };
-  const seen = new Set<string>();
-  for (const r of recipe) {
-    const nm = str(r?.name, 60, "Tên nguyên liệu", true)!;
-    num(String(r?.qty ?? "").replace(",", "."), `Định lượng của ${nm}`, { max: 100000, required: true });
-    const unit = str(r?.unit, 15, "Đơn vị");
-    if (seen.has(nm.toLowerCase())) throw new HttpError(400, `Trùng nguyên liệu: ${nm}.`);
-    seen.add(nm.toLowerCase());
-    const match = findIng(nm);
-    if (match && match.id === id) throw new HttpError(400, "Không thể dùng chính nó làm nguyên liệu.");
-    if (match?.unit && unit && match.unit.toLowerCase() !== unit.toLowerCase()) {
-      throw new HttpError(
-        400,
-        `"${match.name}" trong thư viện dùng đơn vị "${match.unit}", không phải "${unit}". Nhập theo "${match.unit}" hoặc sửa đơn vị ở Thư viện.`,
-      );
-    }
-  }
-
   const dup = await db
     .prepare("SELECT id FROM foods WHERE name = ? COLLATE NOCASE AND kind = ? AND id <> ?")
     .bind(f.name, kind, id ?? 0)
@@ -188,62 +153,18 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
   if (dup) throw new HttpError(409, `Đã có "${f.name}" trong thư viện.`);
 
   if (id) {
-    if (kind === "dish") {
-      const used = await db.prepare("SELECT 1 FROM recipe_items WHERE ingredient_id = ? LIMIT 1").bind(id).first();
-      if (used) throw new HttpError(409, "Mục này đang là nguyên liệu của món khác, không đổi thành Món ăn được.");
-    }
     const r = await db
-      .prepare(
-        "UPDATE foods SET name = ?, kind = ?, emoji = ?, category = ?, unit = ?, price = ?, servings = ?, place = ?, note = ? WHERE id = ?",
-      )
-      .bind(f.name, kind, f.emoji, f.category, f.unit, f.price, f.servings, f.place, f.note, id)
+      .prepare("UPDATE foods SET name = ?, kind = ?, category = ?, unit = ?, price = ?, place = ?, note = ? WHERE id = ?")
+      .bind(f.name, kind, f.category, f.unit, f.price, f.place, f.note, id)
       .run();
     if (!r.meta.changes) throw new HttpError(404, "Không tìm thấy.");
   } else {
     const r = await db
-      .prepare(
-        "INSERT INTO foods (name, kind, emoji, category, unit, price, servings, place, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      )
-      .bind(f.name, kind, f.emoji, f.category, f.unit, f.price, f.servings, f.place, f.note)
+      .prepare("INSERT INTO foods (name, kind, category, unit, price, place, note) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(f.name, kind, f.category, f.unit, f.price, f.place, f.note)
       .run();
     id = r.meta.last_row_id;
   }
-
-  // Công thức (món ăn, đồ uống tự pha). Gõ tên nguyên liệu mới thì tự tạo.
-  const rows: { i: number; q: number }[] = [];
-  if (kind === "dish" || kind === "drink") {
-    for (const r of recipe) {
-      const nm = str(r?.name, 60, "Tên nguyên liệu", true)!;
-      const qty = num(String(r?.qty ?? "").replace(",", "."), `Định lượng của ${nm}`, { max: 100000, required: true })!;
-      let match = findIng(nm);
-      const unit = str(r?.unit, 15, "Đơn vị");
-      if (match && unit && !match.unit) {
-        // Nguyên liệu chưa có đơn vị: lấy đơn vị gõ trong công thức.
-        await db.prepare("UPDATE foods SET unit = ? WHERE id = ?").bind(unit, match.id).run();
-        match.unit = unit;
-      }
-      if (!match) {
-        const ins = await db
-          .prepare("INSERT INTO foods (name, kind, unit) VALUES (?, 'ingredient', ?)")
-          .bind(nm, unit)
-          .run();
-        match = { id: ins.meta.last_row_id, name: nm, kind: "ingredient", unit };
-        all.push(match);
-      }
-      if (match.id === id) throw new HttpError(400, "Không thể dùng chính nó làm nguyên liệu.");
-      if (rows.some((x) => x.i === match!.id)) throw new HttpError(400, `Trùng nguyên liệu: ${nm}.`);
-      rows.push({ i: match.id, q: qty });
-    }
-  }
-  await db.batch([
-    db.prepare("DELETE FROM recipe_items WHERE dish_id = ?").bind(id),
-    db
-      .prepare(
-        "INSERT INTO recipe_items (dish_id, ingredient_id, qty) " +
-          "SELECT ?, json_extract(value, '$.i'), json_extract(value, '$.q') FROM json_each(?)",
-      )
-      .bind(id, JSON.stringify(rows)),
-  ]);
   return db.prepare(`SELECT ${FOOD_COLS} FROM foods WHERE id = ?`).bind(id).first();
 }
 
@@ -262,16 +183,16 @@ const openShopping = (db: D1Database) =>
     .then((r) => r.results);
 
 async function generateShopping(db: D1Database, from: string, to: string) {
-  const [{ foods, recipes }, plan, bought] = await Promise.all([
+  const [{ foods }, plan, bought] = await Promise.all([
     loadFoods(db),
     db.prepare("SELECT food_id, servings FROM plan WHERE date BETWEEN ? AND ?").bind(from, to).all<any>(),
     db
       .prepare("SELECT food_id, qty FROM shopping WHERE cleared = 0 AND bought_at IS NOT NULL AND source = 'plan'")
       .all<any>(),
   ]);
-  const needs = subtractBought(computeNeeds(foods, recipes, plan.results), bought.results);
+  const needs = subtractBought(computeNeeds(foods, plan.results), bought.results);
   const rows = needs.map((n) => ({
-    f: n.food_id, n: n.name, q: n.qty, u: n.unit, c: n.category, o: n.for.join(", ") || null, e: n.est,
+    f: n.food_id, n: n.name, q: n.qty, u: n.unit, c: n.category, o: null, e: n.est,
   }));
   await db.batch([
     db.prepare("DELETE FROM shopping WHERE cleared = 0 AND bought_at IS NULL AND source = 'plan'"),
@@ -293,7 +214,7 @@ async function menuText(db: D1Database, date: string, title: string): Promise<st
   const rows = (
     await db
       .prepare(
-        "SELECT p.meal, p.servings, f.name, f.emoji, f.kind, f.unit, f.servings AS base FROM plan p " +
+        "SELECT p.meal, p.servings, f.name, f.unit FROM plan p " +
           "JOIN foods f ON f.id = p.food_id WHERE p.date = ? ORDER BY p.id",
       )
       .bind(date)
@@ -305,10 +226,7 @@ async function menuText(db: D1Database, date: string, title: string): Promise<st
     const items = rows
       .filter((r) => r.meal === m)
       .map((r) => {
-        const extra =
-          r.kind === "dish" && !r.unit
-            ? r.servings !== r.base ? ` ×${fmtQty(r.servings)}` : ""
-            : ` ${fmtQty(r.servings)}${r.unit ? " " + r.unit : ""}`;
+        const extra = r.unit || r.servings !== 1 ? ` ${fmtQty(r.servings)}${r.unit ? " " + r.unit : ""}` : "";
         return `${escapeHtml(r.name)}${extra}`;
       });
     return `<b>${MEAL_LABEL[m as keyof typeof MEAL_LABEL]}:</b> ${items.join(", ")}`;
@@ -394,15 +312,6 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     const id = Number(m[1]);
     if (method === "PUT") return json(await saveFood(db, body, id));
     if (method === "DELETE") {
-      const used = await db
-        .prepare(
-          "SELECT d.name FROM recipe_items r JOIN foods d ON d.id = r.dish_id WHERE r.ingredient_id = ? LIMIT 3",
-        )
-        .bind(id)
-        .all<{ name: string }>();
-      if (used.results.length) {
-        throw new HttpError(409, `Đang là nguyên liệu của: ${used.results.map((r) => r.name).join(", ")}. Gỡ ra trước.`);
-      }
       await db.prepare("DELETE FROM foods WHERE id = ?").bind(id).run();
       return json({ ok: true });
     }
@@ -420,10 +329,9 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
   if (path === "/api/plan" && method === "POST") {
     if (!isDate(body?.date)) throw new HttpError(400, "Ngày không hợp lệ.");
     if (!MEALS.includes(body.meal)) throw new HttpError(400, "Bữa không hợp lệ.");
-    const food = await db.prepare("SELECT kind, servings FROM foods WHERE id = ?").bind(body.food_id).first<Food>();
+    const food = await db.prepare("SELECT id FROM foods WHERE id = ?").bind(body.food_id).first();
     if (!food) throw new HttpError(404, "Không tìm thấy món.");
-    const servings =
-      num(body.servings, "Khẩu phần", { min: 0.01, max: 1000 }) ?? (food.kind === "dish" ? food.servings : 1);
+    const servings = num(body.servings, "Số lượng", { min: 0.01, max: 1000 }) ?? 1;
     const r = await db
       .prepare("INSERT INTO plan (date, meal, food_id, servings) VALUES (?, ?, ?, ?)")
       .bind(body.date, body.meal, body.food_id, servings)
@@ -448,7 +356,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
   if ((m = path.match(/^\/api\/plan\/(\d+)$/))) {
     const id = Number(m[1]);
     if (method === "PUT") {
-      const servings = num(body?.servings, "Khẩu phần", { min: 0.01, max: 1000, required: true });
+      const servings = num(body?.servings, "Số lượng", { min: 0.01, max: 1000, required: true });
       if (body.meal != null && !MEALS.includes(body.meal)) throw new HttpError(400, "Bữa không hợp lệ.");
       if (body.date != null && !isDate(body.date)) throw new HttpError(400, "Ngày không hợp lệ.");
       await db
@@ -467,7 +375,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     const date = isDate(q.get("date")) ? q.get("date")! : vnToday();
     const r = await db
       .prepare(
-        "SELECT id FROM foods WHERE kind = 'dish' AND id NOT IN " +
+        "SELECT id FROM foods WHERE id NOT IN " +
           "(SELECT food_id FROM plan WHERE date BETWEEN ? AND ?) ORDER BY random() LIMIT 4",
       )
       .bind(addDays(date, -3), addDays(date, 3))
@@ -486,8 +394,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     const qty = num(String(body?.qty ?? "").replace(",", "."), "Số lượng", { max: 100000 });
     const food = await db
       .prepare(
-        "SELECT id, kind, unit, category, price FROM foods WHERE name = ? COLLATE NOCASE AND kind <> 'dish' " +
-          "ORDER BY kind = 'ingredient' DESC LIMIT 1",
+        "SELECT id, kind, unit, category, price FROM foods WHERE name = ? COLLATE NOCASE LIMIT 1",
       )
       .bind(name)
       .first<Food>();
@@ -533,7 +440,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
         .prepare(`UPDATE shopping SET qty = ?, price = ?, bought_at = ${boughtSql} WHERE id = ?`)
         .bind(qty, price, id)
         .run();
-      // Giá tham khảo của nguyên liệu tự cập nhật theo giá mua thực tế.
+      // Giá tham khảo của món tự cập nhật theo giá mua thực tế.
       if (body?.price != null && price && qty && row.food_id) {
         await db.prepare("UPDATE foods SET price = ? WHERE id = ?").bind(Math.round(price / qty), row.food_id).run();
       }
@@ -582,21 +489,17 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
       if (!Array.isArray(body?.[k])) throw new HttpError(400, `File sao lưu thiếu "${k}".`);
       return JSON.stringify(body[k]);
     };
-    const [foods, recipes, plan, shopping] = [arr("foods"), arr("recipes"), arr("plan"), arr("shopping")];
+    const [foods, plan, shopping] = [arr("foods"), arr("plan"), arr("shopping")];
     const x = (f: string) => `json_extract(value, '$.${f}')`;
     await db.batch([
       db.prepare("DELETE FROM shopping"),
       db.prepare("DELETE FROM plan"),
-      db.prepare("DELETE FROM recipe_items"),
       db.prepare("DELETE FROM foods"),
       db.prepare(
-        "INSERT INTO foods (id, name, kind, emoji, category, unit, price, servings, place, note) SELECT " +
-          ["id", "name", "kind", "emoji", "category", "unit", "price"].map(x).join(", ") +
-          `, COALESCE(${x("servings")}, 1), ${x("place")}, ${x("note")} FROM json_each(?)`,
+        "INSERT INTO foods (id, name, kind, category, unit, price, place, note) SELECT " +
+          `${x("id")}, ${x("name")}, CASE ${x("kind")} WHEN 'ingredient' THEN 'dish' ELSE ${x("kind")} END, ` +
+          ["category", "unit", "price", "place", "note"].map(x).join(", ") + " FROM json_each(?)",
       ).bind(foods),
-      db.prepare(
-        `INSERT INTO recipe_items (dish_id, ingredient_id, qty) SELECT ${x("dish_id")}, ${x("ingredient_id")}, ${x("qty")} FROM json_each(?)`,
-      ).bind(recipes),
       db.prepare(
         `INSERT INTO plan (id, date, meal, food_id, servings) SELECT ${["id", "date", "meal", "food_id", "servings"].map(x).join(", ")} FROM json_each(?)`,
       ).bind(plan),
@@ -613,12 +516,12 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 }
 
 async function exportAll(db: D1Database) {
-  const [{ foods, recipes }, plan, shopping] = await Promise.all([
+  const [{ foods }, plan, shopping] = await Promise.all([
     loadFoods(db),
     db.prepare("SELECT id, date, meal, food_id, servings FROM plan ORDER BY date, id").all(),
     db.prepare("SELECT * FROM shopping ORDER BY id").all(),
   ]);
-  return { app: "meal-mate", exported_at: new Date().toISOString(), foods, recipes, plan: plan.results, shopping: shopping.results };
+  return { app: "meal-mate", exported_at: new Date().toISOString(), foods, plan: plan.results, shopping: shopping.results };
 }
 
 // ---------- bot ----------

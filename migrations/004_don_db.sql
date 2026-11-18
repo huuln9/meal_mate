@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS recipe_items;
+ALTER TABLE foods DROP COLUMN emoji;
+ALTER TABLE foods DROP COLUMN servings;
