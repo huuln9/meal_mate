@@ -151,6 +151,36 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
     place: str(body.place, 60, "Nơi mua"),
     note: str(body.note, 3000, "Ghi chú"),
   };
+  // Kiểm tra công thức trước khi ghi gì vào DB (tránh lưu dở dang).
+  const recipe: any[] = (kind === "dish" || kind === "drink") && Array.isArray(body.recipe) ? body.recipe : [];
+  if (recipe.length > 30) throw new HttpError(400, "Tối đa 30 nguyên liệu.");
+  const all = (
+    await db.prepare("SELECT id, name, kind, unit FROM foods WHERE kind <> 'dish'").all<{
+      id: number; name: string; kind: Kind; unit: string | null;
+    }>()
+  ).results;
+  const findIng = (nm: string) => {
+    const lower = nm.toLowerCase();
+    return all.find((x) => x.name.toLowerCase() === lower && x.kind === "ingredient") ??
+      all.find((x) => x.name.toLowerCase() === lower);
+  };
+  const seen = new Set<string>();
+  for (const r of recipe) {
+    const nm = str(r?.name, 60, "Tên nguyên liệu", true)!;
+    num(String(r?.qty ?? "").replace(",", "."), `Định lượng của ${nm}`, { max: 100000, required: true });
+    const unit = str(r?.unit, 15, "Đơn vị");
+    if (seen.has(nm.toLowerCase())) throw new HttpError(400, `Trùng nguyên liệu: ${nm}.`);
+    seen.add(nm.toLowerCase());
+    const match = findIng(nm);
+    if (match && match.id === id) throw new HttpError(400, "Không thể dùng chính nó làm nguyên liệu.");
+    if (match?.unit && unit && match.unit.toLowerCase() !== unit.toLowerCase()) {
+      throw new HttpError(
+        400,
+        `"${match.name}" trong thư viện dùng đơn vị "${match.unit}", không phải "${unit}". Nhập theo "${match.unit}" hoặc sửa đơn vị ở Thư viện.`,
+      );
+    }
+  }
+
   const dup = await db
     .prepare("SELECT id FROM foods WHERE name = ? COLLATE NOCASE AND kind = ? AND id <> ?")
     .bind(f.name, kind, id ?? 0)
@@ -182,22 +212,17 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
   // Công thức (món ăn, đồ uống tự pha). Gõ tên nguyên liệu mới thì tự tạo.
   const rows: { i: number; q: number }[] = [];
   if (kind === "dish" || kind === "drink") {
-    const recipe: any[] = Array.isArray(body.recipe) ? body.recipe : [];
-    if (recipe.length > 30) throw new HttpError(400, "Tối đa 30 nguyên liệu.");
-    const all = (
-      await db.prepare("SELECT id, name, kind, unit FROM foods WHERE kind <> 'dish'").all<{
-        id: number; name: string; kind: Kind; unit: string | null;
-      }>()
-    ).results;
     for (const r of recipe) {
       const nm = str(r?.name, 60, "Tên nguyên liệu", true)!;
       const qty = num(String(r?.qty ?? "").replace(",", "."), `Định lượng của ${nm}`, { max: 100000, required: true })!;
-      const lower = nm.toLowerCase();
-      let match =
-        all.find((x) => x.name.toLowerCase() === lower && x.kind === "ingredient") ??
-        all.find((x) => x.name.toLowerCase() === lower);
+      let match = findIng(nm);
+      const unit = str(r?.unit, 15, "Đơn vị");
+      if (match && unit && !match.unit) {
+        // Nguyên liệu chưa có đơn vị: lấy đơn vị gõ trong công thức.
+        await db.prepare("UPDATE foods SET unit = ? WHERE id = ?").bind(unit, match.id).run();
+        match.unit = unit;
+      }
       if (!match) {
-        const unit = str(r?.unit, 15, "Đơn vị");
         const ins = await db
           .prepare("INSERT INTO foods (name, kind, unit) VALUES (?, 'ingredient', ?)")
           .bind(nm, unit)

@@ -144,11 +144,14 @@ async function busy(btn, fn) {
 }
 
 // ---------- sheet (bảng trượt từ dưới lên) ----------
-function openSheet(html) {
+/** modal = true: form thêm/sửa, chỉ đóng bằng nút ✕ (bấm ra ngoài không mất dữ liệu đang nhập). */
+let sheetModal = false;
+function openSheet(html, { modal = false } = {}) {
+  sheetModal = modal;
   $("#sheet").innerHTML = html;
   $("#sheet-bg").hidden = false;
   document.body.classList.add("noscroll");
-  try { tg?.BackButton?.show(); } catch {}
+  try { modal ? tg?.BackButton?.hide() : tg?.BackButton?.show(); } catch {}
   return $("#sheet");
 }
 function closeSheet() {
@@ -158,9 +161,9 @@ function closeSheet() {
   try { tg?.BackButton?.hide(); } catch {}
 }
 $("#sheet-bg").addEventListener("click", (e) => {
-  if (e.target.id === "sheet-bg" || e.target.closest("[data-close]")) closeSheet();
+  if (e.target.closest("[data-close]") || (e.target.id === "sheet-bg" && !sheetModal)) closeSheet();
 });
-try { tg?.BackButton?.onClick(closeSheet); } catch {}
+try { tg?.BackButton?.onClick(() => { if (!sheetModal) closeSheet(); }); } catch {}
 const sheetHead = (title) => `<div class="sh-h"><b>${title}</b><button type="button" class="x" data-close>✕</button></div>`;
 
 // ---------- thư viện (dữ liệu dùng chung) ----------
@@ -372,7 +375,7 @@ function openPlanEntry(id) {
         <button type="button" class="ghost" id="pe-open">Sửa món</button>
         <button class="primary">Lưu</button>
       </div>
-    </form>`);
+    </form>`, { modal: true });
   $("#pe", sh).onsubmit = (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -636,7 +639,7 @@ function openFoodEditor(id, opts = {}) {
         ${id ? '<button type="button" class="ghost danger" id="fe-del">Xoá</button>' : ""}
         <button class="primary">Lưu</button>
       </div>
-    </form>`);
+    </form>`, { modal: true });
   let kind = f.kind;
   const applyKind = () => {
     const recipeOn = kind === "dish" || kind === "drink";
