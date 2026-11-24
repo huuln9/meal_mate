@@ -228,3 +228,9 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 .qv { flex: none; min-width: 52px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
 .krw.done .qv { color: var(--hint); }
 .krw.done .sn { text-decoration: none; }
+
+/* Menu ↔ Kho */
+.lrow { display: flex; align-items: center; gap: 6px; border-bottom: 0.5px solid var(--line); }
+.lrow .item { border-bottom: 0; flex: 1; min-width: 0; }
+.tostock { flex: none; border: 0; background: var(--bg2); color: var(--text); border-radius: 8px; padding: 6px 9px; font-size: 12px; }
+.instock { display: block; font-size: 12px; font-weight: 400; color: var(--ok); }

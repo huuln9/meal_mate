@@ -82,7 +82,8 @@ const addMonths = (ym, n) => {
 
 const state = {
   foods: [],
-  kinds: [], // [{ key, label, color }] theo thứ tự, quản lý ở Kho → Loại
+  kinds: [], // [{ key, label, color }] theo thứ tự, quản lý ở Menu → Loại
+  stock: [],
   byId: new Map(),
   parts: new Map(), // food_id → [{ part_id, qty }]
   usedIn: new Map(), // part_id → [food_id]
@@ -161,7 +162,7 @@ $("#sheet-bg").addEventListener("click", (e) => {
 try { tg?.BackButton?.onClick(() => { if (!sheetModal) closeSheet(); }); } catch {}
 const sheetHead = (title) => `<div class="sh-h"><b>${title}</b><button type="button" class="x" data-close>✕</button></div>`;
 
-// ---------- kho (dữ liệu dùng chung) ----------
+// ---------- menu (dữ liệu dùng chung) ----------
 async function loadFoods() {
   const { foods, parts = [], kinds = [] } = await api("/api/foods");
   state.foods = foods;
@@ -235,6 +236,7 @@ function showTab(name) {
   if (name === "plan") loadPlan().catch(fail);
   if (name === "shop") loadShop().catch(fail);
   if (name === "lib") renderLib();
+  if (name === "stock") loadStock().catch(fail);
   if (name === "stats") loadStats().catch(fail);
 }
 $("#tabs").addEventListener("click", (e) => {
@@ -303,7 +305,7 @@ $("#w-copy").onclick = async (e) => {
 $("#w-clear").onclick = async (e) => {
   if (!state.plan.length) return toast("Tuần này chưa có món nào.");
   const range = `${dm(state.week)} – ${dm(addDays(state.week, 6))}`;
-  if (!(await confirmBox(`Xoá hết ${state.plan.length} món trong thực đơn tuần ${range}?\nKho món vẫn giữ nguyên.`))) return;
+  if (!(await confirmBox(`Xoá hết ${state.plan.length} món trong thực đơn tuần ${range}?\nMenu và Kho vẫn giữ nguyên.`))) return;
   busy(e.currentTarget, async () => {
     const r = await api("/api/plan/clear", { method: "POST", body: { from: state.week, to: addDays(state.week, 6) } });
     haptic("warning");
@@ -565,7 +567,7 @@ $("#s-reset").onclick = async (e) => {
 };
 
 // =====================================================================
-// KHO
+// MENU
 // =====================================================================
 function foodSub(f) {
   const price = f.price != null ? `${fmtMoney(f.price)}${f.unit ? "/" + f.unit : ""}` : f.unit;
@@ -584,7 +586,7 @@ function renderLib() {
   $("#lib-list").innerHTML =
     list.map((f) => `<button class="item" data-id="${f.id}"><span class="emo">${foodIcon(f)}</span>
       <span class="nm">${esc(f.name)}<span class="hint">${esc(foodSub(f))}</span></span></button>`).join("") ||
-    `<p class="hint empty">${state.foods.length ? "Không tìm thấy." : "Kho trống. Bấm “+ Thêm” để tạo món đầu tiên."}</p>`;
+    `<p class="hint empty">${state.foods.length ? "Không tìm thấy." : "Menu trống. Bấm “+ Thêm” để tạo món đầu tiên."}</p>`;
 }
 $("#l-q").oninput = renderLib;
 $("#l-kinds").onclick = (e) => {
@@ -683,7 +685,7 @@ function openFoodEditor(id, opts = {}) {
     return { name: x?.name, qty: p.qty, unit: x?.unit };
   });
   const usedIn = (id ? state.usedIn.get(id) ?? [] : []).map((x) => state.byId.get(x)?.name).filter(Boolean);
-  const sh = openSheet(`${sheetHead(id ? "Sửa" : "Thêm vào kho")}
+  const sh = openSheet(`${sheetHead(id ? "Sửa" : "Thêm vào menu")}
     <form id="fe" class="form" autocomplete="off">
       <div class="seg" id="fe-kind">${kindButtons(f.kind, false)}</div>
       <div class="f-name">
@@ -706,7 +708,7 @@ function openFoodEditor(id, opts = {}) {
         <h3>Gồm các món <span class="hint" id="fe-per"></span></h3>
         <div id="fe-parts">${partRows.map(partRow).join("")}</div>
         <button type="button" class="ghost sm" id="fe-addpart">+ Thành phần</button>
-        <p class="hint">Chọn món có sẵn hoặc gõ tên mới (tự thêm vào kho, loại Nguyên liệu). Món có thành phần thì đi chợ sẽ mua các thành phần thay cho nó.</p>
+        <p class="hint">Chọn món có sẵn hoặc gõ tên mới (tự thêm vào menu, loại Nguyên liệu). Món có thành phần thì đi chợ sẽ mua các thành phần thay cho nó.</p>
         ${usedIn.length ? `<p class="hint">Đang là thành phần của: ${usedIn.map(esc).join(", ")}</p>` : ""}
       </div>
       <label>Ghi chú<textarea name="note" rows="2" maxlength="1000">${esc(f.note)}</textarea></label>
@@ -832,6 +834,139 @@ function openFoodEditor(id, opts = {}) {
     };
   }
 }
+
+// =====================================================================
+// KHO (những thứ đang có ở nhà)
+// =====================================================================
+async function loadStock() {
+  try {
+    state.stock = await api("/api/stock");
+  } catch (e) {
+    // Hiện lỗi ngay trong tab (VD: chưa chạy migration 009) thay vì toast thoáng qua.
+    $("#k-sum").textContent = "";
+    $("#stock-list").innerHTML = `<p class="err">⚠️ ${esc(e.message)}</p>`;
+    throw e;
+  }
+  renderStock();
+}
+
+function stockRow(r) {
+  const f = r.food_id ? state.byId.get(r.food_id) : null;
+  const empty = r.qty != null && r.qty <= 0;
+  const q = r.qty != null ? `${fmtQty(r.qty)}${r.unit ? " " + esc(r.unit) : ""}` : esc(r.unit || "");
+  return `<div class="srow krw${empty ? " done" : ""}" data-id="${r.id}">
+    <span class="emo">${f ? foodIcon(f) : `<span class="fi fl">${esc(initial(r.name))}</span>`}</span>
+    <button class="sn link-row">${esc(r.name)}${r.note ? `<span class="hint">${esc(r.note)}</span>` : ""}</button>
+    <button class="qb minus" aria-label="Bớt">−</button>
+    <span class="qv">${empty ? "hết" : q || "—"}</span>
+    <button class="qb plus" aria-label="Thêm">+</button>
+    <button class="del" aria-label="Xoá">✕</button>
+  </div>`;
+}
+
+function renderStock() {
+  const q = norm($("#k-q").value);
+  const list = state.stock.filter((r) => !q || norm(r.name).includes(q));
+  const have = state.stock.filter((r) => r.qty == null || r.qty > 0).length;
+  $("#k-sum").textContent = state.stock.length
+    ? `Đang có ${have} thứ${state.stock.length > have ? ` · ${state.stock.length - have} đã hết` : ""}`
+    : "Kho trống. Thêm những thứ đang có ở nhà ở ô bên dưới.";
+  const groups = new Map();
+  for (const r of list) {
+    const c = r.category || (r.kind ? kindLabel(r.kind) : "Khác");
+    if (!groups.has(c)) groups.set(c, []);
+    groups.get(c).push(r);
+  }
+  let html = "";
+  for (const c of [...groups.keys()].sort((a, b) => a.localeCompare(b, "vi"))) {
+    html += `<h3>${esc(c)}</h3>${groups.get(c).map(stockRow).join("")}`;
+  }
+  $("#stock-list").innerHTML = html || (state.stock.length ? `<p class="hint empty">Không tìm thấy.</p>` : "");
+}
+$("#k-q").oninput = renderStock;
+
+$("#stock-list").addEventListener("click", (e) => {
+  const row = e.target.closest(".srow");
+  if (!row) return;
+  const id = Number(row.dataset.id);
+  const r = state.stock.find((x) => x.id === id);
+  const step = (d) => {
+    const qty = Math.max(0, round2((r.qty ?? 0) + d));
+    tap();
+    busy(null, async () => {
+      await api(`/api/stock/${id}`, { method: "PUT", body: { qty, unit: r.unit, note: r.note } });
+      await loadStock();
+    });
+  };
+  if (e.target.closest(".minus")) step(-1);
+  else if (e.target.closest(".plus")) step(1);
+  else if (e.target.closest(".del")) {
+    busy(null, async () => {
+      await api(`/api/stock/${id}`, { method: "DELETE" });
+      haptic("warning");
+      await loadStock();
+    });
+  } else if (e.target.closest(".sn")) openStockEntry(r);
+});
+
+function openStockEntry(r) {
+  const sh = openSheet(`${sheetHead(esc(r.name))}
+    <form id="ks" class="form" autocomplete="off">
+      <div class="f2">
+        <label>Số lượng<input name="qty" inputmode="decimal" value="${r.qty != null ? fmtQty(r.qty) : ""}" /></label>
+        <label>Đơn vị<input name="unit" list="dl-units" maxlength="15" value="${esc(r.unit)}" /></label>
+      </div>
+      <label>Ghi chú<input name="note" maxlength="200" placeholder="VD: hạn dùng, để ở tủ đông..." value="${esc(r.note)}" /></label>
+      <div class="actions">
+        <button type="button" class="ghost danger" id="ks-del">Xoá khỏi kho</button>
+        <button class="primary">Lưu</button>
+      </div>
+    </form>`, { modal: true });
+  $("#ks", sh).onsubmit = (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const qty = parseNum(fd.get("qty"));
+    if (Number.isNaN(qty) || qty < 0) return toast("Số lượng không hợp lệ.");
+    busy(e.submitter, async () => {
+      await api(`/api/stock/${r.id}`, { method: "PUT", body: { qty, unit: fd.get("unit"), note: fd.get("note") } });
+      haptic();
+      closeSheet();
+      await loadStock();
+    });
+  };
+  $("#ks-del", sh).onclick = (e) =>
+    busy(e.currentTarget, async () => {
+      await api(`/api/stock/${r.id}`, { method: "DELETE" });
+      haptic("warning");
+      closeSheet();
+      await loadStock();
+    });
+}
+
+$("#k-name").addEventListener("change", () => {
+  const f = state.foods.find((x) => norm(x.name) === norm($("#k-name").value));
+  if (f?.unit && !$("#k-unit").value) $("#k-unit").value = f.unit;
+});
+$("#k-add").onsubmit = (e) => {
+  e.preventDefault();
+  if (!$("#k-name").value.trim()) {
+    $("#k-name").focus();
+    return toast("Nhập tên thứ cần thêm vào kho trước.");
+  }
+  const qty = parseNum($("#k-qty").value);
+  if (Number.isNaN(qty)) return toast("Số lượng không hợp lệ.");
+  busy(e.submitter, async () => {
+    const r = await api("/api/stock", {
+      method: "POST",
+      body: { name: $("#k-name").value, qty, unit: $("#k-unit").value },
+    });
+    e.target.reset();
+    haptic();
+    if (r.merged) toast("Đã cộng dồn vào món có sẵn trong kho.");
+    await loadStock();
+    $("#k-name").focus();
+  });
+};
 
 // =====================================================================
 // CHI TIÊU

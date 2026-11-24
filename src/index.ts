@@ -629,8 +629,9 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
   if (path === "/api/stock" && method === "GET") {
     const r = await db
       .prepare(
-        "SELECT s.id, s.food_id, s.name, s.qty, s.unit, s.note, s.updated_at, f.kind, f.category FROM stock s " +
-          "LEFT JOIN foods f ON f.id = s.food_id ORDER BY s.name",
+        // Món lấy từ Menu thì hiện theo tên hiện tại của món (đổi tên ở Menu là Kho đổi theo).
+        "SELECT s.id, s.food_id, COALESCE(f.name, s.name) AS name, s.qty, s.unit, s.note, s.updated_at, f.kind, f.category FROM stock s " +
+          "LEFT JOIN foods f ON f.id = s.food_id ORDER BY 3",
       )
       .all()
       .catch((e) => {
@@ -639,26 +640,40 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     return json(r.results);
   }
   if (path === "/api/stock" && method === "POST") {
-    // Thêm vào kho. Đã có thứ cùng tên (và cùng đơn vị) thì cộng dồn số lượng.
-    const name = str(body?.name, 60, "Tên", true)!;
+    // Thêm vào kho: chọn món từ Menu (food_id) hoặc gõ tên. Đã có cùng món, cùng đơn vị thì cộng dồn số lượng.
     const qty = num(String(body?.qty ?? "").replace(",", "."), "Số lượng", { max: 100000 });
-    const food = await db.prepare("SELECT id, unit FROM foods WHERE name = ? COLLATE NOCASE LIMIT 1").bind(name).first<Food>();
-    const unit = str(body?.unit, 15, "Đơn vị") ?? food?.unit ?? null;
+    let food: { id: number; name: string; unit: string | null } | null;
+    if (body?.food_id != null) {
+      food = await db.prepare("SELECT id, name, unit FROM foods WHERE id = ?").bind(Number(body.food_id)).first();
+      if (!food) throw new HttpError(404, "Không tìm thấy món trong Menu.");
+    } else {
+      const nm = str(body?.name, 60, "Tên", true)!;
+      food = await db.prepare("SELECT id, name, unit FROM foods WHERE name = ? COLLATE NOCASE LIMIT 1").bind(nm).first();
+      food ??= { id: 0, name: nm, unit: null };
+    }
+    const name = food.name;
+    const unit = str(body?.unit, 15, "Đơn vị") ?? food.unit ?? null;
     const same = await db
-      .prepare("SELECT id, qty FROM stock WHERE name = ? COLLATE NOCASE AND COALESCE(unit, '') = COALESCE(?, '') COLLATE NOCASE")
-      .bind(name, unit)
+      .prepare(
+        "SELECT id, qty FROM stock WHERE (food_id = ? OR (food_id IS NULL AND name = ? COLLATE NOCASE)) " +
+          "AND COALESCE(unit, '') = COALESCE(?, '') COLLATE NOCASE ORDER BY food_id IS NULL LIMIT 1",
+      )
+      .bind(food.id, name, unit)
       .first<{ id: number; qty: number | null }>()
       .catch((e) => {
         throw noStockTable(e);
       });
     if (same) {
       const total = same.qty != null || qty != null ? (same.qty ?? 0) + (qty ?? 0) : null;
-      await db.prepare("UPDATE stock SET qty = ?, updated_at = datetime('now') WHERE id = ?").bind(total, same.id).run();
+      await db
+        .prepare("UPDATE stock SET qty = ?, food_id = COALESCE(food_id, ?), updated_at = datetime('now') WHERE id = ?")
+        .bind(total, food.id || null, same.id)
+        .run();
       return json({ id: same.id, merged: true });
     }
     const r = await db
       .prepare("INSERT INTO stock (food_id, name, qty, unit, note) VALUES (?, ?, ?, ?, ?)")
-      .bind(food?.id ?? null, name, qty, unit, str(body?.note, 200, "Ghi chú"))
+      .bind(food.id || null, name, qty, unit, str(body?.note, 200, "Ghi chú"))
       .run();
     return json({ id: r.meta.last_row_id }, 201);
   }

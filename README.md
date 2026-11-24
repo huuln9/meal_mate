@@ -5,7 +5,8 @@ Cùng kiến trúc với `bida_pool`, chạy chung tài khoản Cloudflare free 
 
 ## Chức năng
 
-- **Kho**: các loại món ngang hàng, mặc định **Đồ ăn / Rau củ / Trái cây / Đồ uống / Đồ ngọt / Nguyên liệu**.
+- **Kho**: những thứ đang có ở nhà — số lượng, bấm −/+ để đổi, thêm trùng tên thì cộng dồn, nhóm theo Nhóm/loại của món.
+- **Menu**: các loại món ngang hàng, mặc định **Đồ ăn / Rau củ / Trái cây / Đồ uống / Đồ ngọt / Nguyên liệu**.
   Nút **Loại** để thêm, đổi tên, đổi màu, sắp xếp, xoá loại (loại còn món thì phải chuyển món đi trước).
   Món nào cũng có thể **gồm các món khác** (thành phần, ngang hàng; gõ tên mới khi thêm thành phần sẽ tự tạo thành Nguyên liệu),
   VD Phở bò (1 tô) gồm 0,2 kg Bánh phở + 0,1 kg Thịt bò. Thành phần lồng nhiều tầng được, chặn vòng lặp.
@@ -85,10 +86,12 @@ Khi code đổi cấu trúc bảng, chạy file trong `migrations/` **một lầ
 | `006_thanh_phan.sql` | Bảng `food_parts`: món gồm các món khác |
 | `007_thu_tu_thanh_phan.sql` | Thêm cột `pos` để sắp xếp thứ tự thành phần (chạy sau 006) |
 | `008_loai.sql` | Bảng `kinds`: tự quản lý loại món (tạo sẵn 6 loại mặc định) |
+| `009_kho.sql` | Bảng `stock`: tab Kho (những thứ đang có ở nhà) |
 
 DB mới tạo từ `schema.sql` đã có sẵn, không cần chạy migration.
 
 ## Ghi chú
+- Sửa `public/app.js` / `style.css` thì tăng số `?v=` trong `public/index.html` để Telegram không dùng bản cũ đã lưu.
 - Nhắc 20:00 cấu hình ở `[triggers]` trong `wrangler.toml` (giờ UTC). Xoá khối đó nếu không muốn nhắc.
 - File sao lưu không chứa ảnh món; khôi phục từ file thì phải chọn lại ảnh.
 - Hạn mức free Cloudflare (100k request/ngày, D1 5 GB) dùng chung với bida_pool vẫn dư rất nhiều.

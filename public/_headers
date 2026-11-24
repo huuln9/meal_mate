@@ -1,0 +1,9 @@
+# Bắt Telegram/trình duyệt luôn hỏi lại bản mới của giao diện (tránh dùng app.js cũ sau khi deploy).
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/app.js
+  Cache-Control: no-cache
+/style.css
+  Cache-Control: no-cache
