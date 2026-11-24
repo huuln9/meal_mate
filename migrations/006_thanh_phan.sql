@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS food_parts (food_id INTEGER NOT NULL REFERENCES foods(id) ON DELETE CASCADE, part_id INTEGER NOT NULL REFERENCES foods(id), qty REAL NOT NULL CHECK (qty > 0), PRIMARY KEY (food_id, part_id));

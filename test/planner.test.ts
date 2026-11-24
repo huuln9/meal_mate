@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addDays, computeNeeds, diffDays, fmtMoney, subtractBought, vnToday, weekStart, type Food } from "../src/planner.ts";
+import { addDays, computeNeeds, diffDays, fmtMoney, makesCycle, subtractBought, vnToday, weekStart, type Food, type Part } from "../src/planner.ts";
 
 const foods: Food[] = [
   { id: 1, name: "Bánh mì", kind: "dish", unit: "ổ", price: 15000, category: "Ăn sáng" },
@@ -11,7 +11,7 @@ const foods: Food[] = [
 ];
 
 test("cộng dồn số lượng, tính tiền ước tính", () => {
-  const needs = computeNeeds(foods, [
+  const needs = computeNeeds(foods, [], [
     { food_id: 1, servings: 1 },
     { food_id: 1, servings: 2 },
     { food_id: 3, servings: 1.5 },
@@ -28,15 +28,56 @@ test("cộng dồn số lượng, tính tiền ước tính", () => {
 });
 
 test("món không giá vẫn vào danh sách, nhóm mặc định theo loại", () => {
-  const [n] = computeNeeds(foods, [{ food_id: 5, servings: 1 }]);
+  const [n] = computeNeeds(foods, [], [{ food_id: 5, servings: 1 }]);
   assert.equal(n.est, null);
   assert.equal(n.category, "Đồ ăn");
 });
 
 test("trừ phần đã mua", () => {
-  const needs = computeNeeds(foods, [{ food_id: 1, servings: 3 }, { food_id: 2, servings: 1 }]);
+  const needs = computeNeeds(foods, [], [{ food_id: 1, servings: 3 }, { food_id: 2, servings: 1 }]);
   const rest = subtractBought(needs, [{ food_id: 2, qty: 1 }, { food_id: 1, qty: 1 }, { food_id: null, qty: 5 }]);
   assert.deepEqual(rest.map((n) => [n.name, n.qty, n.est]), [["Bánh mì", 2, 30000]]);
+});
+
+test("món có thành phần: tách ra mua thành phần, tách nhiều tầng", () => {
+  const fs: Food[] = [
+    { id: 10, name: "Phở bò", kind: "dish", unit: "tô" },
+    { id: 11, name: "Bánh phở", kind: "dish", unit: "kg", price: 20000 },
+    { id: 12, name: "Thịt bò", kind: "dish", unit: "kg", price: 300000 },
+    { id: 13, name: "Nước dùng", kind: "dish", unit: "lít" },
+    { id: 14, name: "Xương", kind: "dish", unit: "kg", price: 80000 },
+    { id: 15, name: "Bò kho", kind: "dish", unit: "phần" },
+  ];
+  const parts: Part[] = [
+    { food_id: 10, part_id: 11, qty: 0.2 },
+    { food_id: 10, part_id: 12, qty: 0.1 },
+    { food_id: 10, part_id: 13, qty: 0.5 },
+    { food_id: 13, part_id: 14, qty: 0.4 },
+    { food_id: 15, part_id: 12, qty: 0.2 },
+  ];
+  const needs = computeNeeds(fs, parts, [
+    { food_id: 10, servings: 2 },
+    { food_id: 15, servings: 1 },
+    { food_id: 12, servings: 0.5 }, // mua thẳng thịt bò
+  ]);
+  const by = (id: number) => needs.find((n) => n.food_id === id)!;
+  assert.equal(needs.find((n) => n.food_id === 10), undefined);
+  assert.equal(needs.find((n) => n.food_id === 13), undefined);
+  assert.equal(by(11).qty, 0.4);
+  assert.equal(by(12).qty, 0.9);
+  assert.equal(by(12).est, 270000);
+  assert.deepEqual(by(12).for.sort(), ["Bò kho", "Phở bò"]);
+  assert.equal(by(14).qty, 0.4);
+});
+
+test("vòng lặp thành phần không treo, phát hiện được khi lưu", () => {
+  const fs: Food[] = [{ id: 1, name: "A", kind: "dish" }, { id: 2, name: "B", kind: "dish" }];
+  const parts: Part[] = [{ food_id: 1, part_id: 2, qty: 1 }, { food_id: 2, part_id: 1, qty: 1 }];
+  assert.ok(computeNeeds(fs, parts, [{ food_id: 1, servings: 1 }]).length > 0);
+  const p: Part[] = [{ food_id: 2, part_id: 3, qty: 1 }];
+  assert.equal(makesCycle(p, 1, [2]), false);
+  assert.equal(makesCycle([...p, { food_id: 3, part_id: 1, qty: 1 }], 1, [2]), true);
+  assert.equal(makesCycle([], 1, [1]), true);
 });
 
 test("ngày tháng", () => {

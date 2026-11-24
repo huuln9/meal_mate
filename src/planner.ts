@@ -18,6 +18,8 @@ export interface Food {
   unit?: string | null;
   price?: number | null;
 }
+/** Thành phần: 1 đơn vị của food_id gồm qty đơn vị của part_id. Món nào cũng có thể là thành phần của món khác. */
+export interface Part { food_id: number; part_id: number; qty: number }
 export interface PlanEntry { food_id: number; servings: number }
 export interface Need {
   food_id: number;
@@ -26,6 +28,7 @@ export interface Need {
   category: string;
   qty: number;
   est: number | null;
+  for: string[]; // cần cho những món nào trong thực đơn (khi được tách từ món có thành phần)
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -34,18 +37,43 @@ export function defaultCategory(kind: string): string {
   return KIND_LABEL[kind as Kind] ?? "Đồ ăn";
 }
 
-/** Cộng dồn những thứ cần mua cho các bữa trong thực đơn (mỗi món mua trực tiếp, số lượng = servings). */
-export function computeNeeds(foods: Food[], plan: PlanEntry[]): Need[] {
+const MAX_DEPTH = 8;
+
+function groupParts(parts: Part[]): Map<number, Part[]> {
+  const m = new Map<number, Part[]>();
+  for (const p of parts) m.set(p.food_id, [...(m.get(p.food_id) ?? []), p]);
+  return m;
+}
+
+/**
+ * Cộng dồn những thứ cần mua cho các bữa trong thực đơn.
+ * - Món có thành phần: tách ra mua các thành phần (nhân theo số lượng), tách tiếp tới món không còn thành phần.
+ * - Món không có thành phần: mua chính nó, số lượng = servings.
+ */
+export function computeNeeds(foods: Food[], parts: Part[], plan: PlanEntry[]): Need[] {
   const byId = new Map(foods.map((f) => [f.id, f]));
-  const acc = new Map<number, number>();
+  const partsOf = groupParts(parts.filter((p) => byId.has(p.part_id) && p.qty > 0));
+  const acc = new Map<number, { qty: number; for: Set<string> }>();
+  const expand = (id: number, qty: number, root: string, path: number[]) => {
+    const ps = partsOf.get(id);
+    if (ps?.length && !path.includes(id) && path.length < MAX_DEPTH) {
+      for (const p of ps) expand(p.part_id, qty * p.qty, root, [...path, id]);
+      return;
+    }
+    const a = acc.get(id) ?? { qty: 0, for: new Set<string>() };
+    a.qty += qty;
+    if (path.length) a.for.add(root);
+    acc.set(id, a);
+  };
   for (const p of plan) {
-    if (!byId.has(p.food_id) || !(p.servings > 0)) continue;
-    acc.set(p.food_id, (acc.get(p.food_id) ?? 0) + p.servings);
+    const f = byId.get(p.food_id);
+    if (f && p.servings > 0) expand(f.id, p.servings, f.name, []);
   }
   const out: Need[] = [];
-  for (const [id, total] of acc) {
+  for (const [id, a] of acc) {
     const f = byId.get(id)!;
-    const qty = round2(total);
+    const qty = round2(a.qty);
+    if (!(qty > 0)) continue;
     out.push({
       food_id: id,
       name: f.name,
@@ -53,9 +81,25 @@ export function computeNeeds(foods: Food[], plan: PlanEntry[]): Need[] {
       category: f.category || defaultCategory(f.kind),
       qty,
       est: f.price != null ? Math.round(f.price * qty) : null,
+      for: [...a.for],
     });
   }
   return out.sort((x, y) => x.category.localeCompare(y.category, "vi") || x.name.localeCompare(y.name, "vi"));
+}
+
+/** Gán thành phần newParts cho món id có tạo vòng lặp không (VD: A gồm B, B lại gồm A). */
+export function makesCycle(parts: Part[], id: number, newParts: number[]): boolean {
+  const partsOf = groupParts(parts.filter((p) => p.food_id !== id));
+  const seen = new Set<number>();
+  const stack = [...newParts];
+  while (stack.length) {
+    const x = stack.pop()!;
+    if (x === id) return true;
+    if (seen.has(x)) continue;
+    seen.add(x);
+    for (const p of partsOf.get(x) ?? []) stack.push(p.part_id);
+  }
+  return false;
 }
 
 /** Trừ đi phần đã mua (chưa dọn) để tạo lại danh sách không bị mua trùng. */

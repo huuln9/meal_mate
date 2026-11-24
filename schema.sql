@@ -6,3 +6,4 @@ CREATE TABLE IF NOT EXISTS shopping (id INTEGER PRIMARY KEY AUTOINCREMENT, food_
 CREATE INDEX IF NOT EXISTS idx_shopping_open ON shopping(cleared);
 CREATE INDEX IF NOT EXISTS idx_shopping_bought ON shopping(bought_at);
 CREATE TABLE IF NOT EXISTS food_images (food_id INTEGER PRIMARY KEY REFERENCES foods(id) ON DELETE CASCADE, mime TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS food_parts (food_id INTEGER NOT NULL REFERENCES foods(id) ON DELETE CASCADE, part_id INTEGER NOT NULL REFERENCES foods(id), qty REAL NOT NULL CHECK (qty > 0), PRIMARY KEY (food_id, part_id));

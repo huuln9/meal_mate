@@ -89,6 +89,8 @@ const addMonths = (ym, n) => {
 const state = {
   foods: [],
   byId: new Map(),
+  parts: new Map(), // food_id → [{ part_id, qty }]
+  usedIn: new Map(), // part_id → [food_id]
   week: weekStart(todayStr()),
   plan: [],
   shop: [],
@@ -166,9 +168,17 @@ const sheetHead = (title) => `<div class="sh-h"><b>${title}</b><button type="but
 
 // ---------- thư viện (dữ liệu dùng chung) ----------
 async function loadFoods() {
-  const { foods } = await api("/api/foods");
+  const { foods, parts = [] } = await api("/api/foods");
   state.foods = foods;
   state.byId = new Map(foods.map((f) => [f.id, f]));
+  state.parts = new Map();
+  state.usedIn = new Map();
+  for (const p of parts) {
+    if (!state.parts.has(p.food_id)) state.parts.set(p.food_id, []);
+    state.parts.get(p.food_id).push(p);
+    if (!state.usedIn.has(p.part_id)) state.usedIn.set(p.part_id, []);
+    state.usedIn.get(p.part_id).push(p.food_id);
+  }
   const opts = (arr) => arr.map((v) => `<option value="${esc(v)}">`).join("");
   $("#dl-units").innerHTML = opts([...new Set([...UNITS, ...foods.map((f) => f.unit).filter(Boolean)])]);
   $("#dl-cats").innerHTML = opts([...new Set([...CATS, ...foods.map((f) => f.category).filter(Boolean)])]);
@@ -281,6 +291,17 @@ $("#w-copy").onclick = async (e) => {
     await loadPlan();
   });
 };
+$("#w-clear").onclick = async (e) => {
+  if (!state.plan.length) return toast("Tuần này chưa có món nào.");
+  const range = `${dm(state.week)} – ${dm(addDays(state.week, 6))}`;
+  if (!(await confirmBox(`Xoá hết ${state.plan.length} món trong thực đơn tuần ${range}?\nThư viện món vẫn giữ nguyên.`))) return;
+  busy(e.currentTarget, async () => {
+    const r = await api("/api/plan/clear", { method: "POST", body: { from: state.week, to: addDays(state.week, 6) } });
+    haptic("warning");
+    toast(`Đã xoá ${r.deleted} món.`);
+    await loadPlan();
+  });
+};
 $("#w-shop").onclick = (e) => {
   const today = todayStr();
   const end = addDays(state.week, 6);
@@ -357,6 +378,7 @@ function openPlanEntry(id) {
       </div>
       <label>Ngày<input type="date" name="date" value="${p.date}" required /></label>
       <label>Ghi chú<input name="note" maxlength="200" placeholder="VD: ăn ở quán, mua cho con..." value="${esc(p.note)}" /></label>
+      ${partsSummary(f, p.servings)}
       ${f.note ? `<div class="note">${esc(f.note)}</div>` : ""}
       <div class="actions">
         <button type="button" class="ghost danger" id="pe-del">Bỏ khỏi thực đơn</button>
@@ -384,6 +406,17 @@ function openPlanEntry(id) {
       await loadPlan();
     });
   $("#pe-open", sh).onclick = () => openFoodEditor(f.id);
+}
+
+/** Liệt kê thành phần đã nhân theo số lượng trong bữa. */
+function partsSummary(f, servings) {
+  const ps = state.parts.get(f.id) ?? [];
+  if (!ps.length) return "";
+  const items = ps.map((p) => {
+    const x = state.byId.get(p.part_id);
+    return `<li>${esc(x?.name)} — ${fmtQty(p.qty * servings)}${x?.unit ? " " + esc(x.unit) : ""}</li>`;
+  });
+  return `<div class="note"><b>Gồm</b><ul>${items.join("")}</ul></div>`;
 }
 
 // =====================================================================
@@ -530,7 +563,8 @@ $("#s-reset").onclick = async (e) => {
 function foodSub(f) {
   const price = f.price != null ? `${fmtMoney(f.price)}${f.unit ? "/" + f.unit : ""}` : f.unit;
   const kind = KIND[f.kind]?.label;
-  return [kind, f.category !== kind ? f.category : "", price, f.place].filter(Boolean).join(" · ");
+  const n = state.parts.get(f.id)?.length;
+  return [kind, f.category !== kind ? f.category : "", n ? `gồm ${n} món` : "", price, f.place].filter(Boolean).join(" · ");
 }
 
 function renderLib() {
@@ -560,9 +594,23 @@ $("#lib-list").onclick = (e) => {
 $("#l-add").onclick = () => openFoodEditor(null, { kind: state.libKind === "all" ? "dish" : state.libKind });
 
 // Thêm / sửa món
+function partRow(r = {}) {
+  return `<div class="prow">
+    <input class="pn" list="dl-buy" placeholder="Tên món" value="${esc(r.name)}" maxlength="60" />
+    <input class="pq" inputmode="decimal" placeholder="SL" value="${r.qty != null ? fmtQty(r.qty) : ""}" />
+    <input class="pu" list="dl-units" placeholder="ĐV" value="${esc(r.unit)}" maxlength="15" />
+    <button type="button" class="del" aria-label="Xoá dòng">✕</button>
+  </div>`;
+}
+
 function openFoodEditor(id, opts = {}) {
   const f = id ? state.byId.get(id) : { kind: opts.kind || "dish" };
   if (!f) return;
+  const partRows = (id ? state.parts.get(id) ?? [] : []).map((p) => {
+    const x = state.byId.get(p.part_id);
+    return { name: x?.name, qty: p.qty, unit: x?.unit };
+  });
+  const usedIn = (id ? state.usedIn.get(id) ?? [] : []).map((x) => state.byId.get(x)?.name).filter(Boolean);
   const sh = openSheet(`${sheetHead(id ? "Sửa" : "Thêm vào thư viện")}
     <form id="fe" class="form" autocomplete="off">
       <div class="seg" id="fe-kind">${Object.entries(KIND)
@@ -583,6 +631,13 @@ function openFoodEditor(id, opts = {}) {
       <div class="f2">
         <label>Nhóm<input name="category" list="dl-cats" maxlength="30" value="${esc(f.category)}" /></label>
         <label>Nơi mua<input name="place" maxlength="60" value="${esc(f.place)}" /></label>
+      </div>
+      <div class="parts">
+        <h3>Gồm các món <span class="hint" id="fe-per"></span></h3>
+        <div id="fe-parts">${partRows.map(partRow).join("")}</div>
+        <button type="button" class="ghost sm" id="fe-addpart">+ Thành phần</button>
+        <p class="hint">Chọn món có sẵn hoặc gõ tên mới (tự tạo thành Đồ ăn). Món có thành phần thì đi chợ sẽ mua các thành phần thay cho nó.</p>
+        ${usedIn.length ? `<p class="hint">Đang là thành phần của: ${usedIn.map(esc).join(", ")}</p>` : ""}
       </div>
       <label>Ghi chú<textarea name="note" rows="2" maxlength="1000">${esc(f.note)}</textarea></label>
       <p class="err" id="fe-err"></p>
@@ -605,6 +660,25 @@ function openFoodEditor(id, opts = {}) {
   };
   applyKind();
   $('[name="name"]', sh).addEventListener("input", renderPhoto);
+  const renderPer = () => {
+    const u = $('[name="unit"]', sh).value.trim();
+    $("#fe-per", sh).textContent = `· số lượng cho 1 ${u || "phần"}`;
+  };
+  renderPer();
+  $('[name="unit"]', sh).addEventListener("input", renderPer);
+  $("#fe-addpart", sh).onclick = () => {
+    $("#fe-parts", sh).insertAdjacentHTML("beforeend", partRow());
+    $("#fe-parts .prow:last-child .pn", sh).focus();
+  };
+  $("#fe-parts", sh).addEventListener("click", (e) => {
+    if (e.target.closest(".del")) e.target.closest(".prow").remove();
+  });
+  $("#fe-parts", sh).addEventListener("change", (e) => {
+    if (!e.target.classList.contains("pn")) return;
+    const row = e.target.closest(".prow");
+    const x = state.foods.find((y) => norm(y.name) === norm(e.target.value));
+    if (x?.unit && !$(".pu", row).value) $(".pu", row).value = x.unit;
+  });
   $("#fe-photo", sh).onchange = async (e) => {
     const file = e.target.files[0];
     e.target.value = "";
@@ -633,7 +707,13 @@ function openFoodEditor(id, opts = {}) {
     const fd = new FormData(e.target);
     const price = parseK(fd.get("price"));
     if (Number.isNaN(price)) return ($("#fe-err", sh).textContent = "Giá không hợp lệ.");
+    const parts = $$(".prow", sh)
+      .map((r) => ({ name: $(".pn", r).value.trim(), qty: parseNum($(".pq", r).value), unit: $(".pu", r).value.trim() }))
+      .filter((r) => r.name);
+    const bad = parts.find((r) => !(r.qty > 0));
+    if (bad) return ($("#fe-err", sh).textContent = `Nhập số lượng cho "${bad.name}".`);
     const body = {
+      parts,
       kind,
       name: fd.get("name"),
       category: fd.get("category"),
@@ -660,6 +740,7 @@ function openFoodEditor(id, opts = {}) {
   };
   if (id) {
     $("#fe-del", sh).onclick = async (e) => {
+      if (usedIn.length) return ($("#fe-err", sh).textContent = `Đang là thành phần của: ${usedIn.join(", ")}. Gỡ ra trước.`);
       if (!(await confirmBox(`Xoá "${f.name}"? Các bữa trong thực đơn có món này cũng bị xoá.`))) return;
       busy(e.currentTarget, async () => {
         try {

@@ -217,3 +217,9 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
   background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 12px; font-size: 13px; z-index: 30;
   max-width: 90vw; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
+
+/* Thành phần của món */
+.parts h3 { margin: 4px 0 6px; font-size: 13px; }
+.prow { display: grid; grid-template-columns: 1fr 58px 64px 28px; gap: 6px; margin-bottom: 6px; }
+.prow input { padding: 7px 8px; }
+.note ul { margin: 4px 0 0; padding-left: 18px; }
