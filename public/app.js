@@ -27,13 +27,6 @@ if (tg) {
 }
 
 // ---------- hằng số ----------
-const KIND = {
-  dish: { label: "Đồ ăn" },
-  veg: { label: "Rau củ" },
-  fruit: { label: "Trái cây" },
-  drink: { label: "Đồ uống" },
-  sweet: { label: "Đồ ngọt" },
-};
 const MEALS = [["sang", "Sáng"], ["phu_sang", "Phụ sáng"], ["trua", "Trưa"], ["phu", "Phụ chiều"], ["toi", "Tối"], ["phu_toi", "Phụ tối"]];
 const UNITS = [
   "kg", "g", "lạng", "lít", "ml",
@@ -89,6 +82,7 @@ const addMonths = (ym, n) => {
 
 const state = {
   foods: [],
+  kinds: [], // [{ key, label, color }] theo thứ tự, quản lý ở Kho → Loại
   byId: new Map(),
   parts: new Map(), // food_id → [{ part_id, qty }]
   usedIn: new Map(), // part_id → [food_id]
@@ -169,8 +163,9 @@ const sheetHead = (title) => `<div class="sh-h"><b>${title}</b><button type="but
 
 // ---------- kho (dữ liệu dùng chung) ----------
 async function loadFoods() {
-  const { foods, parts = [] } = await api("/api/foods");
+  const { foods, parts = [], kinds = [] } = await api("/api/foods");
   state.foods = foods;
+  state.kinds = kinds;
   state.byId = new Map(foods.map((f) => [f.id, f]));
   state.parts = new Map();
   state.usedIn = new Map();
@@ -185,6 +180,19 @@ async function loadFoods() {
   $("#dl-cats").innerHTML = opts([...new Set([...CATS, ...foods.map((f) => f.category).filter(Boolean)])]);
   $("#dl-buy").innerHTML = opts(foods.map((f) => f.name));
 }
+const kindOf = (key) => state.kinds.find((k) => k.key === key);
+const kindLabel = (key) => kindOf(key)?.label ?? "Khác";
+const firstKind = () => state.kinds[0]?.key ?? "dish";
+/** Màu của loại, gắn vào phần tử qua biến CSS --kc. */
+const kc = (key) => {
+  const c = kindOf(key)?.color;
+  return c ? ` style="--kc:${esc(c)}"` : "";
+};
+const kindButtons = (active, withAll, counts) =>
+  [...(withAll ? [{ key: "all", label: "Tất cả" }] : []), ...state.kinds]
+    .map((k) => `<button type="button" data-k="${esc(k.key)}" class="${k.key === active ? "on" : ""}">${esc(k.label)}${counts ? ` <small>${counts[k.key] ?? 0}</small>` : ""}</button>`)
+    .join("");
+
 /** Ảnh của món, chưa có ảnh thì hiện chữ cái đầu trên nền màu theo loại. */
 const initial = (name) => ([...String(name ?? "").trim()][0] ?? "?").toUpperCase();
 const imgUrl = (f) => `/api/img/${f.id}?v=${encodeURIComponent(f.img_v)}`;
@@ -192,7 +200,7 @@ function foodIcon(f) {
   if (!f) return "";
   return f.img_v
     ? `<img class="fi" src="${imgUrl(f)}" alt="" loading="lazy" />`
-    : `<span class="fi fl k-${f.kind}">${esc(initial(f.name))}</span>`;
+    : `<span class="fi fl"${kc(f.kind)}>${esc(initial(f.name))}</span>`;
 }
 
 /** Cắt ảnh vuông ở giữa, thu nhỏ còn size×size, nén JPEG. */
@@ -249,7 +257,7 @@ function planChip(p) {
   const extra =
     f.unit || p.servings !== 1 ? ` <small>${fmtQty(p.servings)}${f.unit ? " " + esc(f.unit) : ""}</small>` : "";
   const note = p.note ? `<small class="pn">📝 ${esc(p.note)}</small>` : "";
-  return `<button class="chip k-${f.kind}" data-plan="${p.id}">${foodIcon(f)}${esc(f.name)}${extra}${note}</button>`;
+  return `<button class="chip"${kc(f.kind)} data-plan="${p.id}">${foodIcon(f)}${esc(f.name)}${extra}${note}</button>`;
 }
 
 function renderPlan() {
@@ -315,9 +323,7 @@ function openPicker(date, meal) {
   let kind = "all";
   const sh = openSheet(`${sheetHead(`${dayName(date)} · ${mealLabel(meal)}`)}
     <input type="search" id="pk-q" placeholder="Tìm món..." />
-    <div class="filter" id="pk-k">${["all", ...Object.keys(KIND)]
-      .map((k) => `<button data-k="${k}" class="${k === kind ? "on" : ""}">${k === "all" ? "Tất cả" : KIND[k].label}</button>`)
-      .join("")}</div>
+    <div class="filter" id="pk-k">${kindButtons(kind, true)}</div>
     <div class="sug" id="pk-sug"></div>
     <div class="list" id="pk-list"></div>
     <div class="actions"><button class="ghost sm" id="pk-new">+ Tạo món mới</button></div>`);
@@ -345,13 +351,13 @@ function openPicker(date, meal) {
   $("#pk-list", sh).onclick = pick;
   $("#pk-sug", sh).onclick = pick;
   $("#pk-new", sh).onclick = () =>
-    openFoodEditor(null, { kind: kind === "all" ? "dish" : kind, afterSave: (f) => addPlan(date, meal, f.id) });
+    openFoodEditor(null, { kind: kind === "all" ? firstKind() : kind, afterSave: (f) => addPlan(date, meal, f.id) });
   api(`/api/suggest?date=${date}`)
     .then((ids) => {
       const fs = ids.map((id) => state.byId.get(id)).filter(Boolean);
       if (fs.length && $("#pk-sug", sh)) {
         $("#pk-sug", sh).innerHTML = `<span class="hint">🎲 Gợi ý:</span>` +
-          fs.map((f) => `<button class="chip k-${f.kind}" data-id="${f.id}">${foodIcon(f)}${esc(f.name)}</button>`).join("");
+          fs.map((f) => `<button class="chip"${kc(f.kind)} data-id="${f.id}">${foodIcon(f)}${esc(f.name)}</button>`).join("");
       }
     })
     .catch(() => {});
@@ -563,7 +569,7 @@ $("#s-reset").onclick = async (e) => {
 // =====================================================================
 function foodSub(f) {
   const price = f.price != null ? `${fmtMoney(f.price)}${f.unit ? "/" + f.unit : ""}` : f.unit;
-  const kind = KIND[f.kind]?.label;
+  const kind = kindLabel(f.kind);
   const n = state.parts.get(f.id)?.length;
   return [kind, f.category !== kind ? f.category : "", n ? `gồm ${n} món` : "", price, f.place].filter(Boolean).join(" · ");
 }
@@ -571,9 +577,8 @@ function foodSub(f) {
 function renderLib() {
   const counts = { all: state.foods.length };
   for (const f of state.foods) counts[f.kind] = (counts[f.kind] ?? 0) + 1;
-  $("#l-kinds").innerHTML = ["all", ...Object.keys(KIND)]
-    .map((k) => `<button data-k="${k}" class="${k === state.libKind ? "on" : ""}">${k === "all" ? "Tất cả" : KIND[k].label} <small>${counts[k] ?? 0}</small></button>`)
-    .join("");
+  if (state.libKind !== "all" && !kindOf(state.libKind)) state.libKind = "all";
+  $("#l-kinds").innerHTML = kindButtons(state.libKind, true, counts);
   const q = norm($("#l-q").value);
   const list = state.foods.filter((f) => (state.libKind === "all" || f.kind === state.libKind) && (!q || norm(f.name).includes(q)));
   $("#lib-list").innerHTML =
@@ -592,7 +597,71 @@ $("#lib-list").onclick = (e) => {
   const b = e.target.closest("[data-id]");
   if (b) openFoodEditor(Number(b.dataset.id));
 };
-$("#l-add").onclick = () => openFoodEditor(null, { kind: state.libKind === "all" ? "dish" : state.libKind });
+$("#l-add").onclick = () => openFoodEditor(null, { kind: state.libKind === "all" ? firstKind() : state.libKind });
+$("#l-kinds-edit").onclick = () => openKindsEditor();
+
+// Quản lý loại: thêm / đổi tên / đổi màu / sắp xếp / xoá
+const PALETTE = ["#e8833a", "#2f9e44", "#d9480f", "#1c7ed6", "#d6336c", "#8d6e63", "#7048e8", "#0c8599", "#f59f00", "#495057"];
+function kindRow(k = {}, count = 0) {
+  const color = k.color || (k.key ? "#868e96" : PALETTE[Math.floor(Math.random() * PALETTE.length)]);
+  return `<div class="krow" data-key="${esc(k.key ?? "")}" data-count="${count}">
+    <input type="color" class="kc-c" value="${esc(color)}" aria-label="Màu" />
+    <input class="kc-l" maxlength="20" placeholder="Tên loại" value="${esc(k.label)}" />
+    <span class="hint">${count ? count + " món" : ""}</span>
+    <button type="button" class="mv up" aria-label="Lên trên">▲</button>
+    <button type="button" class="mv down" aria-label="Xuống dưới">▼</button>
+    <button type="button" class="del" aria-label="Xoá loại">✕</button>
+  </div>`;
+}
+function openKindsEditor() {
+  const counts = {};
+  for (const f of state.foods) counts[f.kind] = (counts[f.kind] ?? 0) + 1;
+  const sh = openSheet(`${sheetHead("Loại món")}
+    <form id="ke" class="form" autocomplete="off">
+      <div id="ke-list">${state.kinds.map((k) => kindRow(k, counts[k.key])).join("")}</div>
+      <button type="button" class="ghost sm" id="ke-add">+ Thêm loại</button>
+      <p class="hint">Bấm ô màu để đổi màu, ▲▼ để sắp xếp. Loại còn món thì phải chuyển món sang loại khác rồi mới xoá được.</p>
+      <p class="err" id="ke-err"></p>
+      <div class="actions"><button class="primary">Lưu</button></div>
+    </form>`, { modal: true });
+  $("#ke-add", sh).onclick = () => {
+    $("#ke-list", sh).insertAdjacentHTML("beforeend", kindRow());
+    $("#ke-list .krow:last-child .kc-l", sh).focus();
+  };
+  $("#ke-list", sh).addEventListener("click", (e) => {
+    const row = e.target.closest(".krow");
+    if (!row) return;
+    if (e.target.closest(".del")) {
+      const n = Number(row.dataset.count);
+      if (n) return ($("#ke-err", sh).textContent = `Loại "${$(".kc-l", row).value}" còn ${n} món, chưa xoá được.`);
+      row.remove();
+    } else if (e.target.closest(".up") && row.previousElementSibling) row.previousElementSibling.before(row);
+    else if (e.target.closest(".down") && row.nextElementSibling) row.nextElementSibling.after(row);
+    else return;
+    tap();
+  });
+  $("#ke", sh).onsubmit = (e) => {
+    e.preventDefault();
+    const kinds = $$(".krow", sh)
+      .map((r) => ({ key: r.dataset.key || undefined, label: $(".kc-l", r).value.trim(), color: $(".kc-c", r).value }))
+      .filter((k) => k.label || k.key);
+    const empty = kinds.find((k) => !k.label);
+    if (empty) return ($("#ke-err", sh).textContent = "Có loại chưa đặt tên.");
+    if (!kinds.length) return ($("#ke-err", sh).textContent = "Cần ít nhất 1 loại.");
+    busy(e.submitter, async () => {
+      try {
+        await api("/api/kinds", { method: "PUT", body: { kinds } });
+        haptic();
+        await loadFoods();
+        closeSheet();
+        rerender();
+      } catch (err) {
+        $("#ke-err", sh).textContent = err.message;
+        haptic("error");
+      }
+    });
+  };
+}
 
 // Thêm / sửa món
 function partRow(r = {}) {
@@ -607,7 +676,7 @@ function partRow(r = {}) {
 }
 
 function openFoodEditor(id, opts = {}) {
-  const f = id ? state.byId.get(id) : { kind: opts.kind || "dish" };
+  const f = id ? state.byId.get(id) : { kind: opts.kind || firstKind() };
   if (!f) return;
   const partRows = (id ? state.parts.get(id) ?? [] : []).map((p) => {
     const x = state.byId.get(p.part_id);
@@ -616,9 +685,7 @@ function openFoodEditor(id, opts = {}) {
   const usedIn = (id ? state.usedIn.get(id) ?? [] : []).map((x) => state.byId.get(x)?.name).filter(Boolean);
   const sh = openSheet(`${sheetHead(id ? "Sửa" : "Thêm vào kho")}
     <form id="fe" class="form" autocomplete="off">
-      <div class="seg" id="fe-kind">${Object.entries(KIND)
-        .map(([k, v]) => `<button type="button" data-k="${k}" class="${k === f.kind ? "on" : ""}">${v.label}</button>`)
-        .join("")}</div>
+      <div class="seg" id="fe-kind">${kindButtons(f.kind, false)}</div>
       <div class="f-name">
         <label class="photo" title="Chọn ảnh"><span id="fe-pv"></span><input type="file" accept="image/*" id="fe-photo" hidden /></label>
         <div class="f-col">
@@ -639,7 +706,7 @@ function openFoodEditor(id, opts = {}) {
         <h3>Gồm các món <span class="hint" id="fe-per"></span></h3>
         <div id="fe-parts">${partRows.map(partRow).join("")}</div>
         <button type="button" class="ghost sm" id="fe-addpart">+ Thành phần</button>
-        <p class="hint">Chọn món có sẵn hoặc gõ tên mới (tự tạo thành Đồ ăn). Món có thành phần thì đi chợ sẽ mua các thành phần thay cho nó.</p>
+        <p class="hint">Chọn món có sẵn hoặc gõ tên mới (tự thêm vào kho, loại Nguyên liệu). Món có thành phần thì đi chợ sẽ mua các thành phần thay cho nó.</p>
         ${usedIn.length ? `<p class="hint">Đang là thành phần của: ${usedIn.map(esc).join(", ")}</p>` : ""}
       </div>
       <label>Ghi chú<textarea name="note" rows="2" maxlength="1000">${esc(f.note)}</textarea></label>
@@ -658,7 +725,7 @@ function openFoodEditor(id, opts = {}) {
     const src = photo ?? (photo === undefined && f.img_v ? imgUrl(f) : null);
     $("#fe-pv", sh).innerHTML = src
       ? `<img src="${src}" alt="" />`
-      : `<span class="fi fl k-${kind}">${esc(initial(name))}</span>`;
+      : `<span class="fi fl"${kc(kind)}>${esc(initial(name))}</span>`;
     $("#fe-photo-del", sh).hidden = !src;
   };
   applyKind();

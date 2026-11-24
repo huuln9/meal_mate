@@ -5,8 +5,9 @@ Cùng kiến trúc với `bida_pool`, chạy chung tài khoản Cloudflare free 
 
 ## Chức năng
 
-- **Kho**: 5 loại ngang hàng **Đồ ăn / Rau củ / Trái cây / Đồ uống / Đồ ngọt**.
-  Món nào cũng có thể **gồm các món khác** (thành phần, ngang hàng — không có loại "nguyên liệu" riêng),
+- **Kho**: các loại món ngang hàng, mặc định **Đồ ăn / Rau củ / Trái cây / Đồ uống / Đồ ngọt / Nguyên liệu**.
+  Nút **Loại** để thêm, đổi tên, đổi màu, sắp xếp, xoá loại (loại còn món thì phải chuyển món đi trước).
+  Món nào cũng có thể **gồm các món khác** (thành phần, ngang hàng; gõ tên mới khi thêm thành phần sẽ tự tạo thành Nguyên liệu),
   VD Phở bò (1 tô) gồm 0,2 kg Bánh phở + 0,1 kg Thịt bò. Thành phần lồng nhiều tầng được, chặn vòng lặp.
   Mỗi món: ảnh (tự cắt vuông, nén nhỏ; chưa có ảnh thì hiện chữ cái đầu), tên, đơn vị, giá, nhóm, nơi mua, ghi chú.
   Tìm kiếm gõ không dấu cũng được.
@@ -83,6 +84,7 @@ Khi code đổi cấu trúc bảng, chạy file trong `migrations/` **một lầ
 | `005_rau_cu_ghi_chu.sql` | Thêm loại Rau củ (bỏ CHECK của `foods.kind`), thêm ghi chú cho từng bữa — dựng lại bảng, giữ dữ liệu |
 | `006_thanh_phan.sql` | Bảng `food_parts`: món gồm các món khác |
 | `007_thu_tu_thanh_phan.sql` | Thêm cột `pos` để sắp xếp thứ tự thành phần (chạy sau 006) |
+| `008_loai.sql` | Bảng `kinds`: tự quản lý loại món (tạo sẵn 6 loại mặc định) |
 
 DB mới tạo từ `schema.sql` đã có sẵn, không cần chạy migration.
 

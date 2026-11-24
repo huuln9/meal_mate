@@ -7,3 +7,5 @@ CREATE INDEX IF NOT EXISTS idx_shopping_open ON shopping(cleared);
 CREATE INDEX IF NOT EXISTS idx_shopping_bought ON shopping(bought_at);
 CREATE TABLE IF NOT EXISTS food_images (food_id INTEGER PRIMARY KEY REFERENCES foods(id) ON DELETE CASCADE, mime TEXT NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
 CREATE TABLE IF NOT EXISTS food_parts (food_id INTEGER NOT NULL REFERENCES foods(id) ON DELETE CASCADE, part_id INTEGER NOT NULL REFERENCES foods(id), qty REAL NOT NULL CHECK (qty > 0), pos INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (food_id, part_id));
+CREATE TABLE IF NOT EXISTS kinds (key TEXT PRIMARY KEY, label TEXT NOT NULL, color TEXT, pos INTEGER NOT NULL DEFAULT 0);
+INSERT OR IGNORE INTO kinds (key, label, color, pos) VALUES ('dish', 'Đồ ăn', '#e8833a', 0), ('veg', 'Rau củ', '#2f9e44', 1), ('fruit', 'Trái cây', '#d9480f', 2), ('drink', 'Đồ uống', '#1c7ed6', 3), ('sweet', 'Đồ ngọt', '#d6336c', 4), ('ingredient', 'Nguyên liệu', '#8d6e63', 5);

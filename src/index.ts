@@ -1,5 +1,5 @@
 import {
-  KINDS,
+  DEFAULT_KINDS,
   MEALS,
   MEAL_LABEL,
   addDays,
@@ -13,7 +13,7 @@ import {
   subtractBought,
   vnToday,
   type Food,
-  type Kind,
+  type KindDef,
   type Part,
 } from "./planner";
 import { tgCall, verifyInitData, type TgUser } from "./telegram";
@@ -99,12 +99,66 @@ function dateRange(from: unknown, to: unknown, maxDays = 62): [string, string] {
 const FOOD_COLS = "id, name, kind, category, unit, price, place, note";
 
 async function loadFoods(db: D1Database) {
-  const [f, parts] = await Promise.all([
+  const [f, parts, kinds] = await Promise.all([
     db.prepare(`SELECT ${FOOD_COLS} FROM foods ORDER BY name`).all<Food & { place: string; note: string }>(),
     loadParts(db),
+    loadKinds(db),
   ]);
-  // "ingredient" là loại cũ (trước khi đơn giản hoá), coi như Đồ ăn.
-  return { foods: f.results.map((x) => (x.kind === "ingredient" ? { ...x, kind: "dish" } : x)), parts };
+  return { foods: f.results, parts, kinds };
+}
+
+/** Các loại món theo thứ tự. Chưa chạy migration 008 thì dùng bộ mặc định. */
+async function loadKinds(db: D1Database): Promise<KindDef[]> {
+  try {
+    const r = await db.prepare("SELECT key, label, color FROM kinds ORDER BY pos, rowid").all<KindDef>();
+    return r.results.length ? r.results : DEFAULT_KINDS;
+  } catch {
+    return DEFAULT_KINDS;
+  }
+}
+
+/** Lưu cả danh sách loại (thêm / sửa / xoá / sắp xếp trong một lần). Loại còn món thì không xoá được. */
+async function saveKinds(db: D1Database, body: any): Promise<KindDef[]> {
+  const input: any[] = Array.isArray(body?.kinds) ? body.kinds : [];
+  if (!input.length) throw new HttpError(400, "Cần ít nhất 1 loại.");
+  if (input.length > 30) throw new HttpError(400, "Tối đa 30 loại.");
+  const old = await loadKinds(db);
+  const labels = new Set<string>();
+  const keys = new Set<string>();
+  const list = input.map((k): KindDef => {
+    const label = str(k?.label, 20, "Tên loại", true)!;
+    if (labels.has(label.toLowerCase())) throw new HttpError(400, `Trùng tên loại: ${label}.`);
+    labels.add(label.toLowerCase());
+    const color = k?.color ? String(k.color) : null;
+    if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) throw new HttpError(400, `Màu của "${label}" không hợp lệ.`);
+    let key = typeof k?.key === "string" && /^[a-z0-9_]{1,20}$/.test(k.key) ? k.key : "";
+    if (!key) key = "k" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    if (keys.has(key)) throw new HttpError(400, `Trùng loại: ${label}.`);
+    keys.add(key);
+    return { key, label, color };
+  });
+  const removed = old.filter((k) => !keys.has(k.key));
+  for (const k of removed) {
+    const n = await db.prepare("SELECT COUNT(*) AS n FROM foods WHERE kind = ?").bind(k.key).first<{ n: number }>();
+    if (n?.n) throw new HttpError(409, `Loại "${k.label}" còn ${n.n} món. Chuyển các món sang loại khác trước khi xoá.`);
+  }
+  await db
+    .batch([
+      db.prepare("DELETE FROM kinds"),
+      db
+        .prepare(
+          "INSERT INTO kinds (key, label, color, pos) SELECT json_extract(value, '$.key'), json_extract(value, '$.label'), " +
+            "json_extract(value, '$.color'), key FROM json_each(?)",
+        )
+        .bind(JSON.stringify(list)),
+    ])
+    .catch((e) => {
+      if (String(e).includes("no such table")) {
+        throw new HttpError(500, "Chưa tạo bảng kinds. Chạy migrations/008_loai.sql trên D1 trước.");
+      }
+      throw e;
+    });
+  return list;
 }
 
 /** Thành phần của các món. Trống nếu chưa chạy migration 006. */
@@ -163,8 +217,9 @@ async function serveImage(db: D1Database, id: number): Promise<Response> {
 
 // ---------- kho món ----------
 async function saveFood(db: D1Database, body: any, id: number | null) {
-  const kind = body?.kind as Kind;
-  if (!KINDS.includes(kind)) throw new HttpError(400, "Loại không hợp lệ.");
+  const kinds = await loadKinds(db);
+  const kind = String(body?.kind ?? "");
+  if (!kinds.some((k) => k.key === kind)) throw new HttpError(400, "Loại không hợp lệ.");
   const f = {
     name: str(body.name, 60, "Tên", true)!,
     category: str(body.category, 30, "Nhóm"),
@@ -173,7 +228,7 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
     place: str(body.place, 60, "Nơi mua"),
     note: str(body.note, 1000, "Ghi chú"),
   };
-  // Thành phần: món khác trong kho (tìm theo tên), gõ tên mới thì tự tạo thành Đồ ăn.
+  // Thành phần: món khác trong kho (tìm theo tên), gõ tên mới thì tự tạo thành Nguyên liệu.
   // Kiểm tra hết trước khi ghi gì vào DB (tránh lưu dở dang).
   const input: any[] | null = Array.isArray(body.parts) ? body.parts : null;
   if (input && input.length > 30) throw new HttpError(400, "Tối đa 30 thành phần.");
@@ -235,7 +290,9 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
     for (const p of parts) {
       let partId = p.match?.id;
       if (!partId) {
-        const ins = await db.prepare("INSERT INTO foods (name, kind, unit) VALUES (?, 'dish', ?)").bind(p.nm, p.unit).run();
+        // Món mới gõ ở ô thành phần: cho vào loại Nguyên liệu, không còn thì Đồ ăn, không nữa thì loại đầu tiên.
+        const partKind = (kinds.find((k) => k.key === "ingredient") ?? kinds.find((k) => k.key === "dish") ?? kinds[0]).key;
+        const ins = await db.prepare("INSERT INTO foods (name, kind, unit) VALUES (?, ?, ?)").bind(p.nm, partKind, p.unit).run();
         partId = ins.meta.last_row_id;
       } else if (p.unit && !p.match!.unit) {
         await db.prepare("UPDATE foods SET unit = ? WHERE id = ?").bind(p.unit, partId).run();
@@ -274,14 +331,14 @@ const openShopping = (db: D1Database) =>
     .then((r) => r.results);
 
 async function generateShopping(db: D1Database, from: string, to: string) {
-  const [{ foods, parts }, plan, bought] = await Promise.all([
+  const [{ foods, parts, kinds }, plan, bought] = await Promise.all([
     loadFoods(db),
     db.prepare("SELECT food_id, servings FROM plan WHERE date BETWEEN ? AND ?").bind(from, to).all<any>(),
     db
       .prepare("SELECT food_id, qty FROM shopping WHERE cleared = 0 AND bought_at IS NOT NULL AND source = 'plan'")
       .all<any>(),
   ]);
-  const needs = subtractBought(computeNeeds(foods, parts, plan.results), bought.results);
+  const needs = subtractBought(computeNeeds(foods, parts, plan.results, kinds), bought.results);
   const rows = needs.map((n) => ({
     f: n.food_id, n: n.name, q: n.qty, u: n.unit, c: n.category, o: n.for.join(", ") || null, e: n.est,
   }));
@@ -399,6 +456,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     }
   }
   if (path === "/api/foods" && method === "POST") return json(await saveFood(db, body, null), 201);
+  if (path === "/api/kinds" && method === "PUT") return json(await saveKinds(db, body));
   if ((m = path.match(/^\/api\/foods\/(\d+)$/))) {
     const id = Number(m[1]);
     if (method === "PUT") return json(await saveFood(db, body, id));
@@ -512,7 +570,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     const est = food?.price != null && qty ? Math.round(food.price * qty) : null;
     const r = await db
       .prepare("INSERT INTO shopping (food_id, name, qty, unit, category, est, source) VALUES (?, ?, ?, ?, ?, ?, 'manual')")
-      .bind(food?.id ?? null, name, qty, unit, food ? food.category || defaultCategory(food.kind) : null, est)
+      .bind(food?.id ?? null, name, qty, unit, food ? food.category || defaultCategory(food.kind, await loadKinds(db)) : null, est)
       .run();
     return json({ id: r.meta.last_row_id }, 201);
   }
@@ -603,15 +661,26 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     // File sao lưu cũ chưa có "parts".
     const parts = JSON.stringify(Array.isArray(body.parts) ? body.parts : []);
     const hasParts = await db.prepare("SELECT 1 FROM food_parts LIMIT 1").first().then(() => true, () => false);
+    // File sao lưu có "kinds" thì thay luôn danh sách loại; file cũ thì giữ loại hiện tại.
+    const hasKinds = Array.isArray(body.kinds) && body.kinds.length > 0 &&
+      (await db.prepare("SELECT 1 FROM kinds LIMIT 1").first().then(() => true, () => false));
     const x = (f: string) => `json_extract(value, '$.${f}')`;
     await db.batch([
       db.prepare("DELETE FROM shopping"),
       db.prepare("DELETE FROM plan"),
       ...(hasParts ? [db.prepare("DELETE FROM food_parts")] : []),
+      ...(hasKinds
+        ? [
+            db.prepare("DELETE FROM kinds"),
+            db.prepare(
+              `INSERT INTO kinds (key, label, color, pos) SELECT ${x("key")}, ${x("label")}, ${x("color")}, key FROM json_each(?)`,
+            ).bind(JSON.stringify(body.kinds)),
+          ]
+        : []),
       db.prepare("DELETE FROM foods"),
       db.prepare(
         "INSERT INTO foods (id, name, kind, category, unit, price, place, note) SELECT " +
-          `${x("id")}, ${x("name")}, CASE ${x("kind")} WHEN 'ingredient' THEN 'dish' ELSE ${x("kind")} END, ` +
+          `${x("id")}, ${x("name")}, ${x("kind")}, ` +
           ["category", "unit", "price", "place", "note"].map(x).join(", ") + " FROM json_each(?)",
       ).bind(foods),
       ...(hasParts
@@ -633,12 +702,12 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 }
 
 async function exportAll(db: D1Database) {
-  const [{ foods, parts }, plan, shopping] = await Promise.all([
+  const [{ foods, parts, kinds }, plan, shopping] = await Promise.all([
     loadFoods(db),
     db.prepare("SELECT id, date, meal, food_id, servings, note FROM plan ORDER BY date, id").all(),
     db.prepare("SELECT * FROM shopping ORDER BY id").all(),
   ]);
-  return { app: "meal-mate", exported_at: new Date().toISOString(), foods, parts, plan: plan.results, shopping: shopping.results };
+  return { app: "meal-mate", exported_at: new Date().toISOString(), kinds, foods, parts, plan: plan.results, shopping: shopping.results };
 }
 
 // ---------- bot ----------

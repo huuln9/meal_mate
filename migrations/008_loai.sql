@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS kinds (key TEXT PRIMARY KEY, label TEXT NOT NULL, color TEXT, pos INTEGER NOT NULL DEFAULT 0);
+INSERT OR IGNORE INTO kinds (key, label, color, pos) VALUES ('dish', 'Đồ ăn', '#e8833a', 0), ('veg', 'Rau củ', '#2f9e44', 1), ('fruit', 'Trái cây', '#d9480f', 2), ('drink', 'Đồ uống', '#1c7ed6', 3), ('sweet', 'Đồ ngọt', '#d6336c', 4), ('ingredient', 'Nguyên liệu', '#8d6e63', 5);

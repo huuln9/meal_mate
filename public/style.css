@@ -11,12 +11,6 @@
   --accent-bg: color-mix(in srgb, var(--btn) 14%, transparent);
   --ok: #2fa84f;
   --danger: var(--tg-theme-destructive-text-color, #e24b4a);
-  --k-dish: #e8833a;
-  --k-veg: #2f9e44;
-  --k-fruit: #d9480f;
-  --k-drink: #1c7ed6;
-  --k-sweet: #d6336c;
-  --k-ingredient: #2f9e44;
 }
 @media (prefers-color-scheme: dark) {
   :root:not(.tg) {
@@ -101,7 +95,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 .chips { display: flex; flex-wrap: wrap; gap: 5px; flex: 1; }
 .chip {
   border: 0; border-radius: 16px; padding: 5px 10px; background: var(--bg2); font-size: 13px;
-  border-left: 3px solid var(--hint);
+  border-left: 3px solid var(--kc, var(--hint));
 }
 .chip small { color: var(--hint); }
 .chip, .sh-h b { display: inline-flex; align-items: center; gap: 6px; }
@@ -110,20 +104,10 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 .fi { flex: none; width: 20px; height: 20px; border-radius: 6px; object-fit: cover; }
 .fl {
   display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 11px;
-  background: var(--hint); line-height: 1;
+  background: var(--kc, var(--hint)); line-height: 1;
 }
-.fl.k-dish { background: var(--k-dish); }
-.fl.k-veg { background: var(--k-veg); }
-.fl.k-fruit { background: var(--k-fruit); }
-.fl.k-drink { background: var(--k-drink); }
-.fl.k-sweet { background: var(--k-sweet); }
 .sh-h .fi { width: 28px; height: 28px; border-radius: 8px; font-size: 14px; }
-.k-dish { border-left-color: var(--k-dish); }
-.k-veg { border-left-color: var(--k-veg); }
-.k-fruit { border-left-color: var(--k-fruit); }
 .pn { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
-.k-drink { border-left-color: var(--k-drink); }
-.k-sweet { border-left-color: var(--k-sweet); }
 .add {
   border: 1px dashed var(--line-strong); background: transparent; color: var(--hint); border-radius: 16px;
   width: 32px; height: 29px; font-size: 16px; line-height: 1;
@@ -192,7 +176,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 }
 .link { border: 0; background: none; padding: 0; font-size: 13px; color: var(--link); }
 .link.danger { color: var(--danger); }
-.seg { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; background: var(--bg2); padding: 3px; border-radius: 11px; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--bg2); padding: 3px; border-radius: 11px; }
 .seg button { border: 0; background: transparent; border-radius: 8px; padding: 6px 2px; font-size: 12px; }
 .seg button.on { background: var(--bg); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
 .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; flex-wrap: wrap; }
@@ -228,3 +212,10 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 .prow:first-child .up, .prow:last-child .down { visibility: hidden; }
 .prow input { padding: 7px 8px; }
 .note ul { margin: 4px 0 0; padding-left: 18px; }
+
+/* Quản lý loại */
+.krow { display: grid; grid-template-columns: 36px 1fr auto 24px 24px 24px; gap: 4px; margin-bottom: 6px; align-items: center; }
+.krow input { padding: 7px 8px; }
+.krow .kc-c { width: 36px; height: 32px; padding: 2px; border-radius: 8px; }
+.krow .mv { border: 0; background: none; color: var(--hint); padding: 4px 0; font-size: 14px; }
+.krow:first-child .up, .krow:last-child .down { visibility: hidden; }

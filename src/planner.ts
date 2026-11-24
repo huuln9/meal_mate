@@ -1,8 +1,15 @@
 // Logic thuần (không đụng DB): tính danh sách đi chợ từ thực đơn, ngày tháng, định dạng.
 
-export const KINDS = ["dish", "veg", "fruit", "drink", "sweet"] as const; // dish = Đồ ăn
-export type Kind = (typeof KINDS)[number];
-export const KIND_LABEL: Record<Kind, string> = { dish: "Đồ ăn", veg: "Rau củ", fruit: "Trái cây", drink: "Đồ uống", sweet: "Đồ ngọt" };
+/** Loại món do người dùng tự quản lý (bảng kinds). Đây là bộ mặc định khi chưa chạy migration 008. */
+export interface KindDef { key: string; label: string; color: string | null }
+export const DEFAULT_KINDS: KindDef[] = [
+  { key: "dish", label: "Đồ ăn", color: "#e8833a" },
+  { key: "veg", label: "Rau củ", color: "#2f9e44" },
+  { key: "fruit", label: "Trái cây", color: "#d9480f" },
+  { key: "drink", label: "Đồ uống", color: "#1c7ed6" },
+  { key: "sweet", label: "Đồ ngọt", color: "#d6336c" },
+  { key: "ingredient", label: "Nguyên liệu", color: "#8d6e63" },
+];
 
 export const MEALS = ["sang", "phu_sang", "trua", "phu", "toi", "phu_toi"] as const;
 export type Meal = (typeof MEALS)[number];
@@ -33,8 +40,9 @@ export interface Need {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export function defaultCategory(kind: string): string {
-  return KIND_LABEL[kind as Kind] ?? "Đồ ăn";
+/** Nhóm mặc định (khi món chưa có Nhóm) = tên loại. */
+export function defaultCategory(kind: string, kinds: KindDef[] = DEFAULT_KINDS): string {
+  return kinds.find((k) => k.key === kind)?.label ?? "Khác";
 }
 
 const MAX_DEPTH = 8;
@@ -50,7 +58,7 @@ function groupParts(parts: Part[]): Map<number, Part[]> {
  * - Món có thành phần: tách ra mua các thành phần (nhân theo số lượng), tách tiếp tới món không còn thành phần.
  * - Món không có thành phần: mua chính nó, số lượng = servings.
  */
-export function computeNeeds(foods: Food[], parts: Part[], plan: PlanEntry[]): Need[] {
+export function computeNeeds(foods: Food[], parts: Part[], plan: PlanEntry[], kinds: KindDef[] = DEFAULT_KINDS): Need[] {
   const byId = new Map(foods.map((f) => [f.id, f]));
   const partsOf = groupParts(parts.filter((p) => byId.has(p.part_id) && p.qty > 0));
   const acc = new Map<number, { qty: number; for: Set<string> }>();
@@ -78,7 +86,7 @@ export function computeNeeds(foods: Food[], parts: Part[], plan: PlanEntry[]): N
       food_id: id,
       name: f.name,
       unit: f.unit ?? null,
-      category: f.category || defaultCategory(f.kind),
+      category: f.category || defaultCategory(f.kind, kinds),
       qty,
       est: f.price != null ? Math.round(f.price * qty) : null,
       for: [...a.for],
