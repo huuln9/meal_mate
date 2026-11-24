@@ -223,6 +223,8 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 
 /* Thành phần của món */
 .parts h3 { margin: 4px 0 6px; font-size: 13px; }
-.prow { display: grid; grid-template-columns: 1fr 58px 64px 28px; gap: 6px; margin-bottom: 6px; }
+.prow { display: grid; grid-template-columns: 1fr 50px 56px 24px 24px 24px; gap: 4px; margin-bottom: 6px; align-items: center; }
+.prow .mv { border: 0; background: none; color: var(--hint); padding: 4px 0; font-size: 14px; }
+.prow:first-child .up, .prow:last-child .down { visibility: hidden; }
 .prow input { padding: 7px 8px; }
 .note ul { margin: 4px 0 0; padding-left: 18px; }

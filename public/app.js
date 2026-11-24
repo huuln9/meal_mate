@@ -600,6 +600,8 @@ function partRow(r = {}) {
     <input class="pa-n" list="dl-buy" placeholder="Tên món" value="${esc(r.name)}" maxlength="60" />
     <input class="pa-q" inputmode="decimal" placeholder="SL" value="${r.qty != null ? fmtQty(r.qty) : ""}" />
     <input class="pa-u" list="dl-units" placeholder="ĐV" value="${esc(r.unit)}" maxlength="15" />
+    <button type="button" class="mv up" aria-label="Lên trên">▲</button>
+    <button type="button" class="mv down" aria-label="Xuống dưới">▼</button>
     <button type="button" class="del" aria-label="Xoá dòng">✕</button>
   </div>`;
 }
@@ -672,7 +674,13 @@ function openFoodEditor(id, opts = {}) {
     $("#fe-parts .prow:last-child .pa-n", sh).focus();
   };
   $("#fe-parts", sh).addEventListener("click", (e) => {
-    if (e.target.closest(".del")) e.target.closest(".prow").remove();
+    const row = e.target.closest(".prow");
+    if (!row) return;
+    if (e.target.closest(".del")) row.remove();
+    else if (e.target.closest(".up") && row.previousElementSibling) row.previousElementSibling.before(row);
+    else if (e.target.closest(".down") && row.nextElementSibling) row.nextElementSibling.after(row);
+    else return;
+    tap();
   });
   $("#fe-parts", sh).addEventListener("change", (e) => {
     if (!e.target.classList.contains("pa-n")) return;

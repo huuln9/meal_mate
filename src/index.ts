@@ -110,7 +110,13 @@ async function loadFoods(db: D1Database) {
 /** Thành phần của các món. Trống nếu chưa chạy migration 006. */
 async function loadParts(db: D1Database): Promise<Part[]> {
   try {
-    return (await db.prepare("SELECT food_id, part_id, qty FROM food_parts").all<Part>()).results;
+    // Thứ tự thành phần theo cột pos (migration 007); chưa có cột thì theo thứ tự lưu.
+    return (
+      await db
+        .prepare("SELECT food_id, part_id, qty FROM food_parts ORDER BY food_id, pos, rowid")
+        .all<Part>()
+        .catch(() => db.prepare("SELECT food_id, part_id, qty FROM food_parts ORDER BY food_id, rowid").all<Part>())
+    ).results;
   } catch {
     return [];
   }
@@ -118,8 +124,10 @@ async function loadParts(db: D1Database): Promise<Part[]> {
 
 const noPartsTable = (e: unknown) =>
   String(e).includes("no such table")
-    ? new HttpError(500, "Chưa tạo bảng food_parts. Chạy migrations/006_thanh_phan.sql trên D1 trước.")
-    : e;
+    ? new HttpError(500, "Chưa tạo bảng food_parts. Chạy migrations/006_thanh_phan.sql và 007 trên D1 trước.")
+    : /no column named pos|has no column/.test(String(e))
+      ? new HttpError(500, "Chưa có cột thứ tự. Chạy migrations/007_thu_tu_thanh_phan.sql trên D1 trước.")
+      : e;
 
 /** Phiên bản ảnh của từng món: { food_id: updated_at }. Trống nếu chưa chạy migration 002. */
 async function imageVersions(db: D1Database): Promise<Record<number, string>> {
@@ -239,8 +247,8 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
         db.prepare("DELETE FROM food_parts WHERE food_id = ?").bind(id),
         db
           .prepare(
-            "INSERT INTO food_parts (food_id, part_id, qty) " +
-              "SELECT ?, json_extract(value, '$.p'), json_extract(value, '$.q') FROM json_each(?)",
+            "INSERT INTO food_parts (food_id, part_id, qty, pos) " +
+              "SELECT ?, json_extract(value, '$.p'), json_extract(value, '$.q'), key FROM json_each(?)",
           )
           .bind(id, JSON.stringify(rows)),
       ])
@@ -607,7 +615,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
           ["category", "unit", "price", "place", "note"].map(x).join(", ") + " FROM json_each(?)",
       ).bind(foods),
       ...(hasParts
-        ? [db.prepare(`INSERT INTO food_parts (food_id, part_id, qty) SELECT ${x("food_id")}, ${x("part_id")}, ${x("qty")} FROM json_each(?)`).bind(parts)]
+        ? [db.prepare(`INSERT INTO food_parts (food_id, part_id, qty, pos) SELECT ${x("food_id")}, ${x("part_id")}, ${x("qty")}, key FROM json_each(?)`).bind(parts)]
         : []),
       db.prepare(
         `INSERT INTO plan (id, date, meal, food_id, servings, note) SELECT ${["id", "date", "meal", "food_id", "servings", "note"].map(x).join(", ")} FROM json_each(?)`,

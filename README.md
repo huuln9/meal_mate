@@ -82,6 +82,7 @@ Khi code đổi cấu trúc bảng, chạy file trong `migrations/` **một lầ
 | `004_don_db.sql` | Xoá bảng `recipe_items`, cột `emoji`, `servings` của `foods` (chạy sau 003) |
 | `005_rau_cu_ghi_chu.sql` | Thêm loại Rau củ (bỏ CHECK của `foods.kind`), thêm ghi chú cho từng bữa — dựng lại bảng, giữ dữ liệu |
 | `006_thanh_phan.sql` | Bảng `food_parts`: món gồm các món khác |
+| `007_thu_tu_thanh_phan.sql` | Thêm cột `pos` để sắp xếp thứ tự thành phần (chạy sau 006) |
 
 DB mới tạo từ `schema.sql` đã có sẵn, không cần chạy migration.
 
