@@ -176,6 +176,11 @@ async function loadParts(db: D1Database): Promise<Part[]> {
   }
 }
 
+const noStockTable = (e: unknown) =>
+  String(e).includes("no such table")
+    ? new HttpError(500, "Chưa tạo bảng stock. Chạy migrations/009_kho.sql trên D1 trước.")
+    : e;
+
 const noPartsTable = (e: unknown) =>
   String(e).includes("no such table")
     ? new HttpError(500, "Chưa tạo bảng food_parts. Chạy migrations/006_thanh_phan.sql và 007 trên D1 trước.")
@@ -247,7 +252,7 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
     if (match?.unit && unit && match.unit.toLowerCase() !== unit.toLowerCase()) {
       throw new HttpError(
         400,
-        `"${match.name}" trong kho tính theo "${match.unit}", không phải "${unit}". Nhập theo "${match.unit}" hoặc sửa đơn vị của nó.`,
+        `"${match.name}" trong menu tính theo "${match.unit}", không phải "${unit}". Nhập theo "${match.unit}" hoặc sửa đơn vị của nó.`,
       );
     }
     return { nm, qty, unit, match };
@@ -269,7 +274,7 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
     .prepare("SELECT id FROM foods WHERE name = ? COLLATE NOCASE AND kind = ? AND id <> ?")
     .bind(f.name, kind, id ?? 0)
     .first();
-  if (dup) throw new HttpError(409, `Đã có "${f.name}" trong kho.`);
+  if (dup) throw new HttpError(409, `Đã có "${f.name}" trong menu.`);
 
   if (id) {
     const r = await db
@@ -620,6 +625,60 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     }
   }
 
+  // --- kho: những thứ đang có ở nhà ---
+  if (path === "/api/stock" && method === "GET") {
+    const r = await db
+      .prepare(
+        "SELECT s.id, s.food_id, s.name, s.qty, s.unit, s.note, s.updated_at, f.kind, f.category FROM stock s " +
+          "LEFT JOIN foods f ON f.id = s.food_id ORDER BY s.name",
+      )
+      .all()
+      .catch((e) => {
+        throw noStockTable(e);
+      });
+    return json(r.results);
+  }
+  if (path === "/api/stock" && method === "POST") {
+    // Thêm vào kho. Đã có thứ cùng tên (và cùng đơn vị) thì cộng dồn số lượng.
+    const name = str(body?.name, 60, "Tên", true)!;
+    const qty = num(String(body?.qty ?? "").replace(",", "."), "Số lượng", { max: 100000 });
+    const food = await db.prepare("SELECT id, unit FROM foods WHERE name = ? COLLATE NOCASE LIMIT 1").bind(name).first<Food>();
+    const unit = str(body?.unit, 15, "Đơn vị") ?? food?.unit ?? null;
+    const same = await db
+      .prepare("SELECT id, qty FROM stock WHERE name = ? COLLATE NOCASE AND COALESCE(unit, '') = COALESCE(?, '') COLLATE NOCASE")
+      .bind(name, unit)
+      .first<{ id: number; qty: number | null }>()
+      .catch((e) => {
+        throw noStockTable(e);
+      });
+    if (same) {
+      const total = same.qty != null || qty != null ? (same.qty ?? 0) + (qty ?? 0) : null;
+      await db.prepare("UPDATE stock SET qty = ?, updated_at = datetime('now') WHERE id = ?").bind(total, same.id).run();
+      return json({ id: same.id, merged: true });
+    }
+    const r = await db
+      .prepare("INSERT INTO stock (food_id, name, qty, unit, note) VALUES (?, ?, ?, ?, ?)")
+      .bind(food?.id ?? null, name, qty, unit, str(body?.note, 200, "Ghi chú"))
+      .run();
+    return json({ id: r.meta.last_row_id }, 201);
+  }
+  if ((m = path.match(/^\/api\/stock\/(\d+)$/))) {
+    const id = Number(m[1]);
+    if (method === "PUT") {
+      const qty = num(String(body?.qty ?? "").replace(",", "."), "Số lượng", { max: 100000 });
+      const r = await db
+        .prepare("UPDATE stock SET qty = ?, unit = ?, note = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(qty, str(body?.unit, 15, "Đơn vị"), str(body?.note, 200, "Ghi chú"), id)
+        .run();
+      if (!r.meta.changes) throw new HttpError(404, "Không tìm thấy.");
+      return json({ id });
+    }
+    if (method === "DELETE") {
+      await db.prepare("DELETE FROM stock WHERE id = ?").bind(id).run();
+      return json({ ok: true });
+    }
+  }
+
   // --- chi tiêu ---
   if (path === "/api/stats" && method === "GET") {
     const month = /^\d{4}-\d{2}$/.test(q.get("month") ?? "") ? q.get("month")! : vnToday().slice(0, 7);
@@ -661,6 +720,9 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     // File sao lưu cũ chưa có "parts".
     const parts = JSON.stringify(Array.isArray(body.parts) ? body.parts : []);
     const hasParts = await db.prepare("SELECT 1 FROM food_parts LIMIT 1").first().then(() => true, () => false);
+    // File sao lưu cũ chưa có "stock" thì giữ nguyên kho hiện tại.
+    const hasStock = Array.isArray(body.stock) &&
+      (await db.prepare("SELECT 1 FROM stock LIMIT 1").first().then(() => true, () => false));
     // File sao lưu có "kinds" thì thay luôn danh sách loại; file cũ thì giữ loại hiện tại.
     const hasKinds = Array.isArray(body.kinds) && body.kinds.length > 0 &&
       (await db.prepare("SELECT 1 FROM kinds LIMIT 1").first().then(() => true, () => false));
@@ -668,6 +730,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     await db.batch([
       db.prepare("DELETE FROM shopping"),
       db.prepare("DELETE FROM plan"),
+      ...(hasStock ? [db.prepare("DELETE FROM stock")] : []),
       ...(hasParts ? [db.prepare("DELETE FROM food_parts")] : []),
       ...(hasKinds
         ? [
@@ -694,6 +757,15 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
           ["id", "food_id", "name", "qty", "unit", "category", "note", "est", "price", "source", "bought_at", "cleared"].map(x).join(", ") +
           `, COALESCE(${x("created_at")}, datetime('now')) FROM json_each(?)`,
       ).bind(shopping),
+      ...(hasStock
+        ? [
+            db.prepare(
+              "INSERT INTO stock (id, food_id, name, qty, unit, note, updated_at) SELECT " +
+                ["id", "food_id", "name", "qty", "unit", "note"].map(x).join(", ") +
+                `, COALESCE(${x("updated_at")}, datetime('now')) FROM json_each(?)`,
+            ).bind(JSON.stringify(body.stock)),
+          ]
+        : []),
     ]);
     return json({ ok: true, foods: body.foods.length, plan: body.plan.length });
   }
@@ -702,12 +774,13 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 }
 
 async function exportAll(db: D1Database) {
-  const [{ foods, parts, kinds }, plan, shopping] = await Promise.all([
+  const [{ foods, parts, kinds }, plan, shopping, stock] = await Promise.all([
     loadFoods(db),
     db.prepare("SELECT id, date, meal, food_id, servings, note FROM plan ORDER BY date, id").all(),
     db.prepare("SELECT * FROM shopping ORDER BY id").all(),
+    db.prepare("SELECT id, food_id, name, qty, unit, note, updated_at FROM stock ORDER BY id").all().catch(() => ({ results: [] })),
   ]);
-  return { app: "meal-mate", exported_at: new Date().toISOString(), kinds, foods, parts, plan: plan.results, shopping: shopping.results };
+  return { app: "meal-mate", exported_at: new Date().toISOString(), kinds, foods, parts, plan: plan.results, shopping: shopping.results, stock: stock.results };
 }
 
 // ---------- bot ----------

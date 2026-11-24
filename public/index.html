@@ -16,7 +16,8 @@
   <nav class="tabs" id="tabs">
     <button data-tab="plan" class="on">Thực đơn</button>
     <button data-tab="shop">Đi chợ <span class="badge" id="shop-badge" hidden></span></button>
-    <button data-tab="lib">Kho</button>
+    <button data-tab="stock">Kho</button>
+    <button data-tab="lib">Menu</button>
     <button data-tab="stats">Chi tiêu</button>
   </nav>
 
@@ -61,7 +62,23 @@
       <p class="hint">Tick để đánh dấu đã mua. Ô bên phải là số tiền thực trả (nghìn đồng); nhập vào sẽ cập nhật giá tham khảo.</p>
     </section>
 
-    <!-- Kho -->
+    <!-- Kho: những thứ đang có ở nhà -->
+    <section id="tab-stock" hidden>
+      <div class="bar">
+        <input id="k-q" type="search" placeholder="Tìm trong kho" />
+      </div>
+      <p class="sub" id="k-sum"></p>
+      <div id="stock-list"></div>
+      <form id="k-add" class="add-row" autocomplete="off">
+        <input id="k-name" list="dl-buy" placeholder="Thêm thứ đang có" maxlength="60" required />
+        <input id="k-qty" inputmode="decimal" placeholder="SL" />
+        <input id="k-unit" list="dl-units" placeholder="ĐV" maxlength="15" />
+        <button class="primary sm" type="submit">+</button>
+      </form>
+      <p class="hint">Bấm − / + để đổi số lượng, bấm vào tên để sửa. Thêm trùng tên sẽ cộng dồn.</p>
+    </section>
+
+    <!-- Menu: các món, loại món -->
     <section id="tab-lib" hidden>
       <div class="bar">
         <input id="l-q" type="search" placeholder="Tìm (gõ không dấu cũng được)" />

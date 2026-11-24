@@ -219,3 +219,12 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 .krow .kc-c { width: 36px; height: 32px; padding: 2px; border-radius: 8px; }
 .krow .mv { border: 0; background: none; color: var(--hint); padding: 4px 0; font-size: 14px; }
 .krow:first-child .up, .krow:last-child .down { visibility: hidden; }
+
+/* Kho */
+.krw .emo { flex: none; display: flex; }
+.krw .emo .fi { width: 32px; height: 32px; border-radius: 8px; font-size: 14px; }
+.link-row { border: 0; background: none; padding: 0; text-align: left; color: var(--text); font: inherit; font-weight: 600; }
+.qb { flex: none; width: 30px; height: 30px; border-radius: 8px; border: 0; background: var(--bg2); color: var(--text); font-size: 16px; padding: 0; }
+.qv { flex: none; min-width: 52px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.krw.done .qv { color: var(--hint); }
+.krw.done .sn { text-decoration: none; }
