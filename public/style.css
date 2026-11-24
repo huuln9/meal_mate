@@ -234,3 +234,5 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 .lrow .item { border-bottom: 0; flex: 1; min-width: 0; }
 .tostock { flex: none; border: 0; background: var(--bg2); color: var(--text); border-radius: 8px; padding: 6px 9px; font-size: 12px; }
 .instock { display: block; font-size: 12px; font-weight: 400; color: var(--ok); }
+.instock.out { color: var(--hint); }
+.qb.toplan { font-size: 14px; }

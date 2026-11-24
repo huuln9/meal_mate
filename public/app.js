@@ -84,6 +84,7 @@ const state = {
   foods: [],
   kinds: [], // [{ key, label, color }] theo thứ tự, quản lý ở Menu → Loại
   stock: [],
+  stockBy: new Map(), // food_id → "3 kg" / "hết"
   byId: new Map(),
   parts: new Map(), // food_id → [{ part_id, qty }]
   usedIn: new Map(), // part_id → [food_id]
@@ -252,7 +253,7 @@ const rerender = () => showTab(currentTab);
 // THỰC ĐƠN
 // =====================================================================
 async function loadPlan() {
-  state.plan = await api(`/api/plan?from=${state.week}&to=${addDays(state.week, 6)}`);
+  [state.plan] = await Promise.all([api(`/api/plan?from=${state.week}&to=${addDays(state.week, 6)}`), refreshStock()]);
   renderPlan();
 }
 
@@ -262,7 +263,9 @@ function planChip(p) {
   const extra =
     f.unit || p.servings !== 1 ? ` <small>${fmtQty(p.servings)}${f.unit ? " " + esc(f.unit) : ""}</small>` : "";
   const note = p.note ? `<small class="pn">📝 ${esc(p.note)}</small>` : "";
-  return `<button class="chip"${kc(f.kind)} data-plan="${p.id}">${foodIcon(f)}${esc(f.name)}${extra}${note}</button>`;
+  const have = stockOf(f.id);
+  const box = have && have !== "hết" ? `<small title="Kho: ${esc(have)}">📦</small>` : "";
+  return `<button class="chip"${kc(f.kind)} data-plan="${p.id}">${foodIcon(f)}${esc(f.name)}${extra}${box}${note}</button>`;
 }
 
 function renderPlan() {
@@ -329,6 +332,7 @@ function openPicker(date, meal) {
   const sh = openSheet(`${sheetHead(`${dayName(date)} · ${mealLabel(meal)}`)}
     <input type="search" id="pk-q" placeholder="Tìm món..." />
     <div class="filter" id="pk-k">${kindButtons(kind, true)}</div>
+    <div class="sug" id="pk-stock"></div>
     <div class="sug" id="pk-sug"></div>
     <div class="list" id="pk-list"></div>
     <div class="actions"><button class="ghost sm" id="pk-new">+ Tạo món mới</button></div>`);
@@ -336,11 +340,30 @@ function openPicker(date, meal) {
     const q = norm($("#pk-q", sh).value);
     const list = state.foods.filter((f) => (kind === "all" || f.kind === kind) && (!q || norm(f.name).includes(q)));
     $("#pk-list", sh).innerHTML =
-      list.map((f) => `<button class="item" data-id="${f.id}"><span class="emo">${foodIcon(f)}</span>
-        <span class="nm">${esc(f.name)}<span class="hint">${esc(foodSub(f))}</span></span></button>`).join("") ||
+      list.map((f) => {
+        const have = stockOf(f.id);
+        return `<button class="item" data-id="${f.id}"><span class="emo">${foodIcon(f)}</span>
+        <span class="nm">${esc(f.name)}<span class="hint">${esc(foodSub(f))}</span>${have ? `<span class="instock${have === "hết" ? " out" : ""}">📦 Kho: ${esc(have)}</span>` : ""}</span></button>`;
+      }).join("") ||
       `<p class="hint empty">Chưa có mục nào${q ? " khớp" : ""}. Bấm "Tạo món mới".</p>`;
   };
   render();
+  // Những thứ đang có trong kho: bấm để thêm nhanh vào bữa này.
+  const inStock = state.stock.filter((r) => r.qty == null || r.qty > 0);
+  if (inStock.length) {
+    $("#pk-stock", sh).innerHTML = `<span class="hint">📦 Đang có trong kho:</span>` +
+      inStock.map((r) => {
+        const f = r.food_id ? state.byId.get(r.food_id) : null;
+        const q = r.qty != null ? ` <small>${fmtQty(r.qty)}${r.unit ? " " + esc(r.unit) : ""}</small>` : "";
+        return `<button class="chip"${f ? kc(f.kind) : ""} data-stock-id="${r.id}">${f ? foodIcon(f) : ""}${esc(r.name)}${q}</button>`;
+      }).join("");
+  }
+  $("#pk-stock", sh).onclick = (e) => {
+    const b = e.target.closest("[data-stock-id]");
+    if (!b) return;
+    const r = state.stock.find((x) => x.id === Number(b.dataset.stockId));
+    busy(b, async () => addPlan(date, meal, await foodIdOfStock(r)));
+  };
   $("#pk-q", sh).oninput = render;
   $("#pk-k", sh).onclick = (e) => {
     const b = e.target.closest("button");
@@ -851,15 +874,92 @@ function openFoodEditor(id, opts = {}) {
 // KHO (những thứ đang có ở nhà)
 // =====================================================================
 /** Tải kho, lỗi thì bỏ qua (dùng ở Menu, không làm phiền nếu chưa chạy migration 009). */
-const refreshStock = () => api("/api/stock").then((r) => (state.stock = r)).catch(() => {});
+/** Gửi số lượng mới của 1 dòng kho; bấm liên tục thì gộp lại, chỉ gửi bản cuối. */
+const stockPending = new Map(); // id → { timer, r }
+const putStockQty = (r) => api(`/api/stock/${r.id}`, { method: "PUT", body: { qty: r.qty, unit: r.unit, note: r.note } });
+function saveStockQty(r) {
+  clearTimeout(stockPending.get(r.id)?.timer);
+  const timer = setTimeout(() => {
+    stockPending.delete(r.id);
+    putStockQty(r).catch((e) => {
+      fail(e);
+      loadStock().catch(() => {});
+    });
+  }, 400);
+  stockPending.set(r.id, { timer, r });
+}
+/** Gửi ngay các thay đổi đang chờ (trước khi tải lại kho, để không bị số cũ đè lên). */
+async function flushStock() {
+  const list = [...stockPending.values()];
+  stockPending.clear();
+  list.forEach((p) => clearTimeout(p.timer));
+  await Promise.all(list.map((p) => putStockQty(p.r).catch(fail)));
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushStock();
+});
+
+const refreshStock = () => flushStock().then(() => api("/api/stock")).then(setStock).catch(() => {});
+
+/** Lưu kho vào state, kèm bảng tra food_id → số lượng hiển thị (khỏi lọc lại cả kho cho từng món). */
+function setStock(rows) {
+  state.stock = rows;
+  const by = new Map();
+  for (const r of rows) {
+    if (!r.food_id) continue;
+    if (!by.has(r.food_id)) by.set(r.food_id, []);
+    by.get(r.food_id).push(r.qty == null ? r.unit || "có" : r.qty <= 0 ? "" : `${fmtQty(r.qty)}${r.unit ? " " + r.unit : ""}`);
+  }
+  state.stockBy = new Map([...by].map(([id, parts]) => [id, parts.filter(Boolean).join(", ") || "hết"]));
+}
+
+/** food_id của 1 dòng kho; thứ gõ tay chưa có trong Menu thì tạo món trong Menu rồi nối vào. */
+async function foodIdOfStock(r) {
+  if (r.food_id) return r.food_id;
+  const { food_id } = await api(`/api/stock/${r.id}/link`, { method: "POST" });
+  r.food_id = food_id;
+  await loadFoods();
+  return food_id;
+}
+
+/** Bữa gợi ý theo giờ hiện tại. */
+function mealNow() {
+  const h = new Date().getHours();
+  return h < 9 ? "sang" : h < 11 ? "phu_sang" : h < 14 ? "trua" : h < 17 ? "phu" : h < 20 ? "toi" : "phu_toi";
+}
+
+/** Thêm 1 thứ trong kho vào thực đơn (chọn ngày, bữa, số lượng). */
+function openStockToPlan(r) {
+  const today = todayStr();
+  const sh = openSheet(`${sheetHead("Thêm vào thực đơn")}
+    <form id="sp" class="form" autocomplete="off">
+      <b>${esc(r.name)}</b>${r.qty != null ? `<span class="hint">Kho đang có: ${fmtQty(r.qty)}${r.unit ? " " + esc(r.unit) : ""}</span>` : ""}
+      <div class="f2">
+        <label>Ngày<input type="date" name="date" value="${today}" required /></label>
+        <label>Bữa<select name="meal">${MEALS.map(([m, l]) => `<option value="${m}"${m === mealNow() ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+      </div>
+      <label>Số lượng${r.unit ? " (" + esc(r.unit) + ")" : ""}<input name="servings" inputmode="decimal" value="1" /></label>
+      <div class="actions"><button class="primary">Thêm vào thực đơn</button></div>
+    </form>`, { modal: true });
+  $("#sp", sh).onsubmit = (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const servings = parseNum(fd.get("servings"));
+    if (!(servings > 0)) return toast("Số lượng không hợp lệ.");
+    busy(e.submitter, async () => {
+      const food_id = await foodIdOfStock(r);
+      await api("/api/plan", { method: "POST", body: { date: fd.get("date"), meal: fd.get("meal"), food_id, servings } });
+      haptic();
+      closeSheet();
+      toast(`Đã thêm ${r.name} vào ${mealLabel(fd.get("meal"))} ${dm(fd.get("date"))}.`);
+      await loadStock();
+    });
+  };
+}
 
 /** Số lượng đang có trong kho của 1 món Menu, VD "3 kg" / "hết" / "" (không có). */
-function stockOf(foodId) {
-  const rows = state.stock.filter((r) => r.food_id === foodId);
-  if (!rows.length) return "";
-  const parts = rows.map((r) => (r.qty == null ? r.unit || "có" : r.qty <= 0 ? "" : `${fmtQty(r.qty)}${r.unit ? " " + r.unit : ""}`)).filter(Boolean);
-  return parts.length ? parts.join(", ") : "hết";
-}
+const stockOf = (foodId) => state.stockBy.get(foodId) ?? "";
 
 /** Thêm 1 món từ Menu vào Kho. */
 function openAddStock(f, after) {
@@ -895,7 +995,8 @@ function openAddStock(f, after) {
 
 async function loadStock() {
   try {
-    state.stock = await api("/api/stock");
+    await flushStock();
+    setStock(await api("/api/stock"));
   } catch (e) {
     // Hiện lỗi ngay trong tab (VD: chưa chạy migration 009) thay vì toast thoáng qua.
     $("#k-sum").textContent = "";
@@ -915,7 +1016,7 @@ function stockRow(r) {
     <button class="qb minus" aria-label="Bớt">−</button>
     <span class="qv">${empty ? "hết" : q || "—"}</span>
     <button class="qb plus" aria-label="Thêm">+</button>
-    <button class="del" aria-label="Xoá">✕</button>
+    <button class="qb toplan" aria-label="Thêm vào thực đơn">🍽</button>
   </div>`;
 }
 
@@ -939,6 +1040,8 @@ function renderStock() {
   $("#stock-list").innerHTML = html || (state.stock.length ? `<p class="hint empty">Không tìm thấy.</p>` : "");
 }
 $("#k-q").oninput = renderStock;
+
+
 $("#k-menu").onclick = () => {
   // Chọn món trong Menu để thêm vào kho.
   let kind = "all";
@@ -977,22 +1080,17 @@ $("#stock-list").addEventListener("click", (e) => {
   const id = Number(row.dataset.id);
   const r = state.stock.find((x) => x.id === id);
   const step = (d) => {
-    const qty = Math.max(0, round2((r.qty ?? 0) + d));
+    // Cập nhật ngay trên màn hình, gửi lên sau (bấm nhanh nhiều lần vẫn cộng đủ, không phải chờ tải lại cả kho).
+    r.qty = Math.max(0, round2((r.qty ?? 0) + d));
     tap();
-    busy(null, async () => {
-      await api(`/api/stock/${id}`, { method: "PUT", body: { qty, unit: r.unit, note: r.note } });
-      await loadStock();
-    });
+    setStock(state.stock);
+    renderStock();
+    saveStockQty(r);
   };
   if (e.target.closest(".minus")) step(-1);
   else if (e.target.closest(".plus")) step(1);
-  else if (e.target.closest(".del")) {
-    busy(null, async () => {
-      await api(`/api/stock/${id}`, { method: "DELETE" });
-      haptic("warning");
-      await loadStock();
-    });
-  } else if (e.target.closest(".sn")) openStockEntry(r);
+  else if (e.target.closest(".toplan")) openStockToPlan(r);
+  else if (e.target.closest(".sn")) openStockEntry(r);
 });
 
 function openStockEntry(r) {

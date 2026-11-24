@@ -677,6 +677,23 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
       .run();
     return json({ id: r.meta.last_row_id }, 201);
   }
+  if ((m = path.match(/^\/api\/stock\/(\d+)\/link$/)) && method === "POST") {
+    // Thứ trong kho gõ tay (chưa có trong Menu): tạo món trong Menu (hoặc tìm món trùng tên) rồi nối vào, để xếp vào thực đơn được.
+    const row = await db.prepare("SELECT id, food_id, name, unit FROM stock WHERE id = ?").bind(Number(m[1])).first<any>();
+    if (!row) throw new HttpError(404, "Không tìm thấy.");
+    let foodId: number | null = row.food_id;
+    if (!foodId) {
+      const found = await db.prepare("SELECT id FROM foods WHERE name = ? COLLATE NOCASE LIMIT 1").bind(row.name).first<{ id: number }>();
+      if (found) foodId = found.id;
+      else {
+        const kinds = await loadKinds(db);
+        const kind = (kinds.find((k) => k.key === "dish") ?? kinds[0]).key;
+        foodId = (await db.prepare("INSERT INTO foods (name, kind, unit) VALUES (?, ?, ?)").bind(row.name, kind, row.unit).run()).meta.last_row_id;
+      }
+      await db.prepare("UPDATE stock SET food_id = ? WHERE id = ?").bind(foodId, row.id).run();
+    }
+    return json({ food_id: foodId });
+  }
   if ((m = path.match(/^\/api\/stock\/(\d+)$/))) {
     const id = Number(m[1]);
     if (method === "PUT") {
