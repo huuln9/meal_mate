@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Meal Mate</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="style.css?v=20261124c" />
+  <link rel="stylesheet" href="style.css?v=20261124d" />
 </head>
 <body>
   <header class="top">
@@ -66,6 +66,7 @@
     <section id="tab-stock" hidden>
       <div class="bar">
         <input id="k-q" type="search" placeholder="Tìm trong kho" />
+        <button class="primary sm" id="k-menu">+ Từ Menu</button>
       </div>
       <p class="sub" id="k-sum"></p>
       <div id="stock-list"></div>
@@ -75,7 +76,7 @@
         <input id="k-unit" list="dl-units" placeholder="ĐV" maxlength="15" />
         <button class="primary sm" type="submit">+</button>
       </form>
-      <p class="hint">Bấm − / + để đổi số lượng, bấm vào tên để sửa. Thêm trùng tên sẽ cộng dồn.</p>
+      <p class="hint">Bấm − / + để đổi số lượng, bấm vào tên để sửa. Thêm trùng món sẽ cộng dồn. Ở tab Menu cũng có nút “+ Kho” cạnh từng món.</p>
     </section>
 
     <!-- Menu: các món, loại món -->
@@ -114,6 +115,6 @@
   <datalist id="dl-cats"></datalist>
   <datalist id="dl-buy"></datalist>
 
-  <script src="app.js?v=20261124c"></script>
+  <script src="app.js?v=20261124d"></script>
 </body>
 </html>

@@ -5,7 +5,8 @@ Cùng kiến trúc với `bida_pool`, chạy chung tài khoản Cloudflare free 
 
 ## Chức năng
 
-- **Kho**: những thứ đang có ở nhà — số lượng, bấm −/+ để đổi, thêm trùng tên thì cộng dồn, nhóm theo Nhóm/loại của món.
+- **Kho**: những thứ đang có ở nhà — số lượng, bấm −/+ để đổi, thêm trùng món thì cộng dồn, nhóm theo Nhóm/loại của món.
+  Liên kết với Menu: nút “+ Từ Menu” ở Kho, nút “+ Kho” cạnh từng món ở Menu; Menu hiện số lượng đang có trong kho.
 - **Menu**: các loại món ngang hàng, mặc định **Đồ ăn / Rau củ / Trái cây / Đồ uống / Đồ ngọt / Nguyên liệu**.
   Nút **Loại** để thêm, đổi tên, đổi màu, sắp xếp, xoá loại (loại còn món thì phải chuyển món đi trước).
   Món nào cũng có thể **gồm các món khác** (thành phần, ngang hàng; gõ tên mới khi thêm thành phần sẽ tự tạo thành Nguyên liệu),

@@ -235,7 +235,10 @@ function showTab(name) {
   $$("main > section").forEach((s) => (s.hidden = s.id !== "tab-" + name));
   if (name === "plan") loadPlan().catch(fail);
   if (name === "shop") loadShop().catch(fail);
-  if (name === "lib") renderLib();
+  if (name === "lib") {
+    renderLib();
+    refreshStock().then(renderLib); // để hiện "Kho: ..." cạnh từng món
+  }
   if (name === "stock") loadStock().catch(fail);
   if (name === "stats") loadStats().catch(fail);
 }
@@ -584,8 +587,12 @@ function renderLib() {
   const q = norm($("#l-q").value);
   const list = state.foods.filter((f) => (state.libKind === "all" || f.kind === state.libKind) && (!q || norm(f.name).includes(q)));
   $("#lib-list").innerHTML =
-    list.map((f) => `<button class="item" data-id="${f.id}"><span class="emo">${foodIcon(f)}</span>
-      <span class="nm">${esc(f.name)}<span class="hint">${esc(foodSub(f))}</span></span></button>`).join("") ||
+    list.map((f) => {
+      const have = stockOf(f.id);
+      return `<div class="lrow"><button class="item" data-id="${f.id}"><span class="emo">${foodIcon(f)}</span>
+      <span class="nm">${esc(f.name)}<span class="hint">${esc(foodSub(f))}</span>${have ? `<span class="instock">📦 ${esc(have)}</span>` : ""}</span></button>
+      <button class="tostock" data-stock="${f.id}" aria-label="Thêm vào kho">+ Kho</button></div>`;
+    }).join("") ||
     `<p class="hint empty">${state.foods.length ? "Không tìm thấy." : "Menu trống. Bấm “+ Thêm” để tạo món đầu tiên."}</p>`;
 }
 $("#l-q").oninput = renderLib;
@@ -596,6 +603,8 @@ $("#l-kinds").onclick = (e) => {
   renderLib();
 };
 $("#lib-list").onclick = (e) => {
+  const s = e.target.closest("[data-stock]");
+  if (s) return openAddStock(state.byId.get(Number(s.dataset.stock)), renderLib);
   const b = e.target.closest("[data-id]");
   if (b) openFoodEditor(Number(b.dataset.id));
 };
@@ -712,6 +721,8 @@ function openFoodEditor(id, opts = {}) {
         ${usedIn.length ? `<p class="hint">Đang là thành phần của: ${usedIn.map(esc).join(", ")}</p>` : ""}
       </div>
       <label>Ghi chú<textarea name="note" rows="2" maxlength="1000">${esc(f.note)}</textarea></label>
+      ${id ? `<div class="bar"><span class="hint">📦 Trong kho: ${esc(stockOf(id) || "chưa có")}</span>
+        <button type="button" class="ghost sm" id="fe-stock">+ Vào kho</button></div>` : ""}
       <p class="err" id="fe-err"></p>
       <div class="actions">
         ${id ? '<button type="button" class="ghost danger" id="fe-del">Xoá</button>' : ""}
@@ -817,6 +828,7 @@ function openFoodEditor(id, opts = {}) {
     });
   };
   if (id) {
+    $("#fe-stock", sh).onclick = () => openAddStock(f, rerender);
     $("#fe-del", sh).onclick = async (e) => {
       if (usedIn.length) return ($("#fe-err", sh).textContent = `Đang là thành phần của: ${usedIn.join(", ")}. Gỡ ra trước.`);
       if (!(await confirmBox(`Xoá "${f.name}"? Các bữa trong thực đơn có món này cũng bị xoá.`))) return;
@@ -838,6 +850,49 @@ function openFoodEditor(id, opts = {}) {
 // =====================================================================
 // KHO (những thứ đang có ở nhà)
 // =====================================================================
+/** Tải kho, lỗi thì bỏ qua (dùng ở Menu, không làm phiền nếu chưa chạy migration 009). */
+const refreshStock = () => api("/api/stock").then((r) => (state.stock = r)).catch(() => {});
+
+/** Số lượng đang có trong kho của 1 món Menu, VD "3 kg" / "hết" / "" (không có). */
+function stockOf(foodId) {
+  const rows = state.stock.filter((r) => r.food_id === foodId);
+  if (!rows.length) return "";
+  const parts = rows.map((r) => (r.qty == null ? r.unit || "có" : r.qty <= 0 ? "" : `${fmtQty(r.qty)}${r.unit ? " " + r.unit : ""}`)).filter(Boolean);
+  return parts.length ? parts.join(", ") : "hết";
+}
+
+/** Thêm 1 món từ Menu vào Kho. */
+function openAddStock(f, after) {
+  const have = stockOf(f.id);
+  const sh = openSheet(`${sheetHead(`${foodIcon(f)} Thêm vào kho`)}
+    <form id="as" class="form" autocomplete="off">
+      <b>${esc(f.name)}</b>${have ? `<span class="hint">Đang có: ${esc(have)}</span>` : ""}
+      <div class="f2">
+        <label>Số lượng<input name="qty" inputmode="decimal" value="1" /></label>
+        <label>Đơn vị<input name="unit" list="dl-units" maxlength="15" value="${esc(f.unit)}" /></label>
+      </div>
+      <label>Ghi chú<input name="note" maxlength="200" placeholder="VD: hạn dùng, để ở tủ đông..." /></label>
+      <div class="actions"><button class="primary">Thêm vào kho</button></div>
+    </form>`, { modal: true });
+  const qi = $('[name="qty"]', sh);
+  qi.focus();
+  qi.select();
+  $("#as", sh).onsubmit = (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const qty = parseNum(fd.get("qty"));
+    if (Number.isNaN(qty) || qty < 0) return toast("Số lượng không hợp lệ.");
+    busy(e.submitter, async () => {
+      const r = await api("/api/stock", { method: "POST", body: { food_id: f.id, qty, unit: fd.get("unit"), note: fd.get("note") } });
+      haptic();
+      closeSheet();
+      toast(r.merged ? `Đã cộng thêm vào kho: ${f.name}.` : `Đã thêm vào kho: ${f.name}.`);
+      await refreshStock();
+      if (after) after();
+    });
+  };
+}
+
 async function loadStock() {
   try {
     state.stock = await api("/api/stock");
@@ -884,6 +939,37 @@ function renderStock() {
   $("#stock-list").innerHTML = html || (state.stock.length ? `<p class="hint empty">Không tìm thấy.</p>` : "");
 }
 $("#k-q").oninput = renderStock;
+$("#k-menu").onclick = () => {
+  // Chọn món trong Menu để thêm vào kho.
+  let kind = "all";
+  const sh = openSheet(`${sheetHead("Chọn từ Menu")}
+    <input type="search" id="km-q" placeholder="Tìm món..." />
+    <div class="filter" id="km-k">${kindButtons(kind, true)}</div>
+    <div class="list" id="km-list"></div>`);
+  const render = () => {
+    const q = norm($("#km-q", sh).value);
+    const list = state.foods.filter((f) => (kind === "all" || f.kind === kind) && (!q || norm(f.name).includes(q)));
+    $("#km-list", sh).innerHTML =
+      list.map((f) => {
+        const have = stockOf(f.id);
+        return `<button class="item" data-id="${f.id}"><span class="emo">${foodIcon(f)}</span>
+        <span class="nm">${esc(f.name)}<span class="hint">${esc(foodSub(f))}</span>${have ? `<span class="instock">📦 ${esc(have)}</span>` : ""}</span></button>`;
+      }).join("") || `<p class="hint empty">Không có món nào.</p>`;
+  };
+  render();
+  $("#km-q", sh).oninput = render;
+  $("#km-k", sh).onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    kind = b.dataset.k;
+    $$("#km-k button", sh).forEach((x) => x.classList.toggle("on", x === b));
+    render();
+  };
+  $("#km-list", sh).onclick = (e) => {
+    const b = e.target.closest("[data-id]");
+    if (b) openAddStock(state.byId.get(Number(b.dataset.id)), renderStock);
+  };
+};
 
 $("#stock-list").addEventListener("click", (e) => {
   const row = e.target.closest(".srow");
