@@ -32,6 +32,7 @@ const KIND = {
   veg: { label: "Rau củ" },
   fruit: { label: "Trái cây" },
   drink: { label: "Đồ uống" },
+  sweet: { label: "Đồ ngọt" },
 };
 const MEALS = [["sang", "Sáng"], ["phu_sang", "Phụ sáng"], ["trua", "Trưa"], ["phu", "Phụ chiều"], ["toi", "Tối"], ["phu_toi", "Phụ tối"]];
 const UNITS = [
@@ -166,7 +167,7 @@ $("#sheet-bg").addEventListener("click", (e) => {
 try { tg?.BackButton?.onClick(() => { if (!sheetModal) closeSheet(); }); } catch {}
 const sheetHead = (title) => `<div class="sh-h"><b>${title}</b><button type="button" class="x" data-close>✕</button></div>`;
 
-// ---------- thư viện (dữ liệu dùng chung) ----------
+// ---------- kho (dữ liệu dùng chung) ----------
 async function loadFoods() {
   const { foods, parts = [] } = await api("/api/foods");
   state.foods = foods;
@@ -294,7 +295,7 @@ $("#w-copy").onclick = async (e) => {
 $("#w-clear").onclick = async (e) => {
   if (!state.plan.length) return toast("Tuần này chưa có món nào.");
   const range = `${dm(state.week)} – ${dm(addDays(state.week, 6))}`;
-  if (!(await confirmBox(`Xoá hết ${state.plan.length} món trong thực đơn tuần ${range}?\nThư viện món vẫn giữ nguyên.`))) return;
+  if (!(await confirmBox(`Xoá hết ${state.plan.length} món trong thực đơn tuần ${range}?\nKho món vẫn giữ nguyên.`))) return;
   busy(e.currentTarget, async () => {
     const r = await api("/api/plan/clear", { method: "POST", body: { from: state.week, to: addDays(state.week, 6) } });
     haptic("warning");
@@ -558,7 +559,7 @@ $("#s-reset").onclick = async (e) => {
 };
 
 // =====================================================================
-// THƯ VIỆN
+// KHO
 // =====================================================================
 function foodSub(f) {
   const price = f.price != null ? `${fmtMoney(f.price)}${f.unit ? "/" + f.unit : ""}` : f.unit;
@@ -578,7 +579,7 @@ function renderLib() {
   $("#lib-list").innerHTML =
     list.map((f) => `<button class="item" data-id="${f.id}"><span class="emo">${foodIcon(f)}</span>
       <span class="nm">${esc(f.name)}<span class="hint">${esc(foodSub(f))}</span></span></button>`).join("") ||
-    `<p class="hint empty">${state.foods.length ? "Không tìm thấy." : "Thư viện trống. Bấm “+ Thêm” để tạo món đầu tiên."}</p>`;
+    `<p class="hint empty">${state.foods.length ? "Không tìm thấy." : "Kho trống. Bấm “+ Thêm” để tạo món đầu tiên."}</p>`;
 }
 $("#l-q").oninput = renderLib;
 $("#l-kinds").onclick = (e) => {
@@ -596,9 +597,9 @@ $("#l-add").onclick = () => openFoodEditor(null, { kind: state.libKind === "all"
 // Thêm / sửa món
 function partRow(r = {}) {
   return `<div class="prow">
-    <input class="pn" list="dl-buy" placeholder="Tên món" value="${esc(r.name)}" maxlength="60" />
-    <input class="pq" inputmode="decimal" placeholder="SL" value="${r.qty != null ? fmtQty(r.qty) : ""}" />
-    <input class="pu" list="dl-units" placeholder="ĐV" value="${esc(r.unit)}" maxlength="15" />
+    <input class="pa-n" list="dl-buy" placeholder="Tên món" value="${esc(r.name)}" maxlength="60" />
+    <input class="pa-q" inputmode="decimal" placeholder="SL" value="${r.qty != null ? fmtQty(r.qty) : ""}" />
+    <input class="pa-u" list="dl-units" placeholder="ĐV" value="${esc(r.unit)}" maxlength="15" />
     <button type="button" class="del" aria-label="Xoá dòng">✕</button>
   </div>`;
 }
@@ -611,7 +612,7 @@ function openFoodEditor(id, opts = {}) {
     return { name: x?.name, qty: p.qty, unit: x?.unit };
   });
   const usedIn = (id ? state.usedIn.get(id) ?? [] : []).map((x) => state.byId.get(x)?.name).filter(Boolean);
-  const sh = openSheet(`${sheetHead(id ? "Sửa" : "Thêm vào thư viện")}
+  const sh = openSheet(`${sheetHead(id ? "Sửa" : "Thêm vào kho")}
     <form id="fe" class="form" autocomplete="off">
       <div class="seg" id="fe-kind">${Object.entries(KIND)
         .map(([k, v]) => `<button type="button" data-k="${k}" class="${k === f.kind ? "on" : ""}">${v.label}</button>`)
@@ -668,16 +669,16 @@ function openFoodEditor(id, opts = {}) {
   $('[name="unit"]', sh).addEventListener("input", renderPer);
   $("#fe-addpart", sh).onclick = () => {
     $("#fe-parts", sh).insertAdjacentHTML("beforeend", partRow());
-    $("#fe-parts .prow:last-child .pn", sh).focus();
+    $("#fe-parts .prow:last-child .pa-n", sh).focus();
   };
   $("#fe-parts", sh).addEventListener("click", (e) => {
     if (e.target.closest(".del")) e.target.closest(".prow").remove();
   });
   $("#fe-parts", sh).addEventListener("change", (e) => {
-    if (!e.target.classList.contains("pn")) return;
+    if (!e.target.classList.contains("pa-n")) return;
     const row = e.target.closest(".prow");
     const x = state.foods.find((y) => norm(y.name) === norm(e.target.value));
-    if (x?.unit && !$(".pu", row).value) $(".pu", row).value = x.unit;
+    if (x?.unit && !$(".pa-u", row).value) $(".pa-u", row).value = x.unit;
   });
   $("#fe-photo", sh).onchange = async (e) => {
     const file = e.target.files[0];
@@ -708,7 +709,7 @@ function openFoodEditor(id, opts = {}) {
     const price = parseK(fd.get("price"));
     if (Number.isNaN(price)) return ($("#fe-err", sh).textContent = "Giá không hợp lệ.");
     const parts = $$(".prow", sh)
-      .map((r) => ({ name: $(".pn", r).value.trim(), qty: parseNum($(".pq", r).value), unit: $(".pu", r).value.trim() }))
+      .map((r) => ({ name: $(".pa-n", r).value.trim(), qty: parseNum($(".pa-q", r).value), unit: $(".pa-u", r).value.trim() }))
       .filter((r) => r.name);
     const bad = parts.find((r) => !(r.qty > 0));
     if (bad) return ($("#fe-err", sh).textContent = `Nhập số lượng cho "${bad.name}".`);

@@ -153,7 +153,7 @@ async function serveImage(db: D1Database, id: number): Promise<Response> {
   });
 }
 
-// ---------- thư viện món ----------
+// ---------- kho món ----------
 async function saveFood(db: D1Database, body: any, id: number | null) {
   const kind = body?.kind as Kind;
   if (!KINDS.includes(kind)) throw new HttpError(400, "Loại không hợp lệ.");
@@ -165,7 +165,7 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
     place: str(body.place, 60, "Nơi mua"),
     note: str(body.note, 1000, "Ghi chú"),
   };
-  // Thành phần: món khác trong thư viện (tìm theo tên), gõ tên mới thì tự tạo thành Đồ ăn.
+  // Thành phần: món khác trong kho (tìm theo tên), gõ tên mới thì tự tạo thành Đồ ăn.
   // Kiểm tra hết trước khi ghi gì vào DB (tránh lưu dở dang).
   const input: any[] | null = Array.isArray(body.parts) ? body.parts : null;
   if (input && input.length > 30) throw new HttpError(400, "Tối đa 30 thành phần.");
@@ -184,7 +184,7 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
     if (match?.unit && unit && match.unit.toLowerCase() !== unit.toLowerCase()) {
       throw new HttpError(
         400,
-        `"${match.name}" trong thư viện tính theo "${match.unit}", không phải "${unit}". Nhập theo "${match.unit}" hoặc sửa đơn vị của nó.`,
+        `"${match.name}" trong kho tính theo "${match.unit}", không phải "${unit}". Nhập theo "${match.unit}" hoặc sửa đơn vị của nó.`,
       );
     }
     return { nm, qty, unit, match };
@@ -206,7 +206,7 @@ async function saveFood(db: D1Database, body: any, id: number | null) {
     .prepare("SELECT id FROM foods WHERE name = ? COLLATE NOCASE AND kind = ? AND id <> ?")
     .bind(f.name, kind, id ?? 0)
     .first();
-  if (dup) throw new HttpError(409, `Đã có "${f.name}" trong thư viện.`);
+  if (dup) throw new HttpError(409, `Đã có "${f.name}" trong kho.`);
 
   if (id) {
     const r = await db
@@ -356,7 +356,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
 
   if (path === "/api/me" && method === "GET") return json({ user, today: vnToday() });
 
-  // --- thư viện ---
+  // --- kho ---
   if (path === "/api/foods" && method === "GET") {
     const [data, img] = await Promise.all([loadFoods(db), imageVersions(db)]);
     return json({ ...data, foods: data.foods.map((f) => ({ ...f, img_v: img[f.id] ?? null })) });
@@ -431,7 +431,7 @@ async function api(req: Request, env: Env, url: URL): Promise<Response> {
     return json({ id: r.meta.last_row_id }, 201);
   }
   if (path === "/api/plan/clear" && method === "POST") {
-    // Xoá mọi món trong thực đơn từ ngày from đến to (chỉ lịch ăn, không đụng thư viện).
+    // Xoá mọi món trong thực đơn từ ngày from đến to (chỉ lịch ăn, không đụng kho).
     const [from, to] = dateRange(body?.from, body?.to, 31);
     const r = await db.prepare("DELETE FROM plan WHERE date BETWEEN ? AND ?").bind(from, to).run();
     return json({ deleted: r.meta.changes });

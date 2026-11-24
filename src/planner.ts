@@ -1,8 +1,8 @@
 // Logic thuần (không đụng DB): tính danh sách đi chợ từ thực đơn, ngày tháng, định dạng.
 
-export const KINDS = ["dish", "veg", "fruit", "drink"] as const; // dish = Đồ ăn
+export const KINDS = ["dish", "veg", "fruit", "drink", "sweet"] as const; // dish = Đồ ăn
 export type Kind = (typeof KINDS)[number];
-export const KIND_LABEL: Record<Kind, string> = { dish: "Đồ ăn", veg: "Rau củ", fruit: "Trái cây", drink: "Đồ uống" };
+export const KIND_LABEL: Record<Kind, string> = { dish: "Đồ ăn", veg: "Rau củ", fruit: "Trái cây", drink: "Đồ uống", sweet: "Đồ ngọt" };
 
 export const MEALS = ["sang", "phu_sang", "trua", "phu", "toi", "phu_toi"] as const;
 export type Meal = (typeof MEALS)[number];

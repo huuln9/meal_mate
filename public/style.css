@@ -15,6 +15,7 @@
   --k-veg: #2f9e44;
   --k-fruit: #d9480f;
   --k-drink: #1c7ed6;
+  --k-sweet: #d6336c;
   --k-ingredient: #2f9e44;
 }
 @media (prefers-color-scheme: dark) {
@@ -115,12 +116,14 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 .fl.k-veg { background: var(--k-veg); }
 .fl.k-fruit { background: var(--k-fruit); }
 .fl.k-drink { background: var(--k-drink); }
+.fl.k-sweet { background: var(--k-sweet); }
 .sh-h .fi { width: 28px; height: 28px; border-radius: 8px; font-size: 14px; }
 .k-dish { border-left-color: var(--k-dish); }
 .k-veg { border-left-color: var(--k-veg); }
 .k-fruit { border-left-color: var(--k-fruit); }
 .pn { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
 .k-drink { border-left-color: var(--k-drink); }
+.k-sweet { border-left-color: var(--k-sweet); }
 .add {
   border: 1px dashed var(--line-strong); background: transparent; color: var(--hint); border-radius: 16px;
   width: 32px; height: 29px; font-size: 16px; line-height: 1;
@@ -145,7 +148,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 .del { flex: none; border: 0; background: none; color: var(--hint); padding: 6px; font-size: 14px; }
 .add-row { display: grid; grid-template-columns: 1fr 58px 64px auto; gap: 6px; margin-top: 12px; }
 
-/* ---------- Danh sách / thư viện ---------- */
+/* ---------- Danh sách / kho ---------- */
 .filter { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0; }
 .filter button {
   flex: none; border: 0.5px solid var(--line-strong); background: transparent; border-radius: 16px; padding: 5px 11px; font-size: 13px;
@@ -189,7 +192,7 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
 }
 .link { border: 0; background: none; padding: 0; font-size: 13px; color: var(--link); }
 .link.danger { color: var(--danger); }
-.seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: var(--bg2); padding: 3px; border-radius: 11px; }
+.seg { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; background: var(--bg2); padding: 3px; border-radius: 11px; }
 .seg button { border: 0; background: transparent; border-radius: 8px; padding: 6px 2px; font-size: 12px; }
 .seg button.on { background: var(--bg); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
 .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; flex-wrap: wrap; }

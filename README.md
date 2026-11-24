@@ -5,7 +5,7 @@ Cùng kiến trúc với `bida_pool`, chạy chung tài khoản Cloudflare free 
 
 ## Chức năng
 
-- **Thư viện**: 4 loại **Đồ ăn / Rau củ / Trái cây / Đồ uống**.
+- **Kho**: 5 loại ngang hàng **Đồ ăn / Rau củ / Trái cây / Đồ uống / Đồ ngọt**.
   Món nào cũng có thể **gồm các món khác** (thành phần, ngang hàng — không có loại "nguyên liệu" riêng),
   VD Phở bò (1 tô) gồm 0,2 kg Bánh phở + 0,1 kg Thịt bò. Thành phần lồng nhiều tầng được, chặn vòng lặp.
   Mỗi món: ảnh (tự cắt vuông, nén nhỏ; chưa có ảnh thì hiện chữ cái đầu), tên, đơn vị, giá, nhóm, nơi mua, ghi chú.
