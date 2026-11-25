@@ -89,7 +89,7 @@ test("ngày tháng", () => {
 });
 
 test("định dạng tiền", () => {
-  assert.equal(fmtMoney(120000), "120k");
-  assert.equal(fmtMoney(1500), "1,5k");
-  assert.equal(fmtMoney(1250000), "1,25tr");
+  assert.equal(fmtMoney(120000), "120.000đ");
+  assert.equal(fmtMoney(1550), "1.550đ");
+  assert.equal(fmtMoney(1234567), "1.234.567đ");
 });

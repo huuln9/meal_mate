@@ -44,8 +44,8 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const norm = (s) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
 const round2 = (n) => Math.round(n * 100) / 100;
 const fmtQty = (n) => String(round2(n)).replace(".", ",");
-const fmtMoney = (v) =>
-  v == null ? "" : Math.abs(v) >= 1e6 ? fmtQty(Math.round(v / 1e4) / 100) + "tr" : fmtQty(Math.round(v / 100) / 10) + "k";
+/** Hiện đúng số đồng, không làm tròn: 12345 → "12.345đ" */
+const fmtMoney = (v) => (v == null ? "" : String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "đ");
 /** "0,5" → 0.5; "" → null */
 const parseNum = (s) => {
   const t = String(s ?? "").trim().replace(",", ".");
@@ -53,12 +53,14 @@ const parseNum = (s) => {
   const n = Number(t);
   return Number.isFinite(n) ? n : NaN;
 };
-/** Nhập theo nghìn đồng: "120" → 120000 */
+/** Nhập thẳng bằng đồng, bỏ dấu chấm/phẩy/khoảng trắng: "12.500" → 12500 */
 const parseK = (s) => {
-  const n = parseNum(s);
-  return n == null || Number.isNaN(n) ? n : Math.round(n * 1000);
+  const t = String(s ?? "").replace(/[.,\s]/g, "");
+  if (!t) return null;
+  return /^\d+$/.test(t) ? Number(t) : NaN;
 };
-const toK = (v) => (v == null ? "" : fmtQty(v / 1000));
+/** Hiện giá bằng đồng: 12500 → "12.500" */
+const toK = (v) => (v == null ? "" : String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, "."));
 
 const pad = (n) => String(n).padStart(2, "0");
 const todayStr = () => {
@@ -483,7 +485,7 @@ function shopRow(r) {
   return `<div class="srow${b ? " done" : ""}" data-id="${r.id}">
     <button class="ck" aria-label="Đã mua">${b ? "✓" : ""}</button>
     <div class="sn">${esc(r.name)}${sub ? `<span class="hint">${sub}</span>` : ""}</div>
-    <input class="sp" inputmode="decimal" value="${b ? toK(r.price) : ""}" placeholder="${r.est ? "~" + toK(r.est) : "giá"}" />
+    <input class="sp" inputmode="numeric" value="${b ? toK(r.price) : ""}" placeholder="${r.est ? "~" + toK(r.est) : "giá"}" />
     <button class="del" aria-label="Xoá">✕</button>
   </div>`;
 }
@@ -495,7 +497,7 @@ function renderShop() {
   const est = todo.reduce((s, r) => s + (r.est ?? 0), 0);
   const paid = done.reduce((s, r) => s + (r.price ?? 0), 0);
   $("#s-sum").textContent = state.shop.length
-    ? `Còn ${todo.length} món${est ? ` · ước tính ~${fmtMoney(est)}` : ""}${done.length ? ` · đã mua ${done.length}, chi ${fmtMoney(paid) || "0k"}` : ""}`
+    ? `Còn ${todo.length} món${est ? ` · ước tính ~${fmtMoney(est)}` : ""}${done.length ? ` · đã mua ${done.length}, chi ${fmtMoney(paid) || "0đ"}` : ""}`
     : "Danh sách trống. Tạo từ thực đơn hoặc thêm tay ở dưới.";
   const groups = new Map();
   for (const r of todo) {
@@ -730,7 +732,7 @@ function openFoodEditor(id, opts = {}) {
       </div>
       <div class="f2">
         <label>Đơn vị<input name="unit" list="dl-units" maxlength="15" placeholder="ổ, hộp, kg..." value="${esc(f.unit)}" /></label>
-        <label>Giá / đơn vị (nghìn đ)<input name="price" inputmode="decimal" value="${toK(f.price)}" /></label>
+        <label>Giá / đơn vị (đ)<input name="price" inputmode="numeric" value="${toK(f.price)}" /></label>
       </div>
       <div class="f2">
         <label>Nhóm<input name="category" list="dl-cats" maxlength="30" value="${esc(f.category)}" /></label>
@@ -1174,9 +1176,9 @@ async function loadStats() {
   const [y, mo] = m.split("-").map(Number);
   const days = today.startsWith(m) ? Number(today.slice(8)) : new Date(Date.UTC(y, mo, 0)).getUTCDate();
   let html = `<div class="kpi">
-    <div><b>${fmtMoney(total) || "0k"}</b><span>tổng chi</span></div>
+    <div><b>${fmtMoney(total) || "0đ"}</b><span>tổng chi</span></div>
     <div><b>${cur?.n ?? 0}</b><span>lần mua</span></div>
-    <div><b>${fmtMoney(total / days) || "0k"}</b><span>trung bình/ngày</span></div>
+    <div><b>${fmtMoney(total / days) || "0đ"}</b><span>trung bình/ngày</span></div>
   </div>`;
   if (!total) html += `<p class="hint empty">Tháng này chưa có khoản chi nào. Nhập giá khi tick món đã mua ở tab Đi chợ.</p>`;
   if (s.categories.length) html += `<h2>Theo nhóm</h2>` + bars(s.categories, (r) => esc(r.category), (r) => r.total);

@@ -158,9 +158,8 @@ export function dayLabel(d: string): string {
 // ---------- định dạng ----------
 export const fmtQty = (n: number) => String(round2(n)).replace(".", ",");
 
-/** 120000 → "120k", 1250000 → "1,25tr". */
+/** Hiện đúng số đồng, không làm tròn: 12345 → "12.345đ". */
 export function fmtMoney(v: number | null | undefined): string {
   if (v == null) return "";
-  if (Math.abs(v) >= 1e6) return fmtQty(Math.round(v / 1e4) / 100) + "tr";
-  return fmtQty(Math.round(v / 100) / 10) + "k";
+  return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "đ";
 }
