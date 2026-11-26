@@ -192,9 +192,13 @@ const kc = (key) => {
   const c = kindOf(key)?.color;
   return c ? ` style="--kc:${esc(c)}"` : "";
 };
+/** Bộ lọc đặc biệt: món có thành phần (không phải loại thật, không sửa/xoá được). */
+const COMBO = "__combo";
+const hasParts = (f) => (state.parts.get(f.id)?.length ?? 0) > 0;
+const matchKind = (f, kind) => kind === "all" || (kind === COMBO ? hasParts(f) : f.kind === kind);
 const kindButtons = (active, withAll, counts) =>
-  [...(withAll ? [{ key: "all", label: "Tất cả" }] : []), ...state.kinds]
-    .map((k) => `<button type="button" data-k="${esc(k.key)}" class="${k.key === active ? "on" : ""}">${esc(k.label)}${counts ? ` <small>${counts[k.key] ?? 0}</small>` : ""}</button>`)
+  [...(withAll ? [{ key: "all", label: "Tất cả" }, { key: COMBO, label: "🧩 Có thành phần", special: true }] : []), ...state.kinds]
+    .map((k) => `<button type="button" data-k="${esc(k.key)}" class="${[k.key === active ? "on" : "", k.special ? "special" : ""].join(" ").trim()}">${esc(k.label)}${counts ? ` <small>${counts[k.key] ?? 0}</small>` : ""}</button>`)
     .join("");
 
 /** Ảnh của món, chưa có ảnh thì hiện chữ cái đầu trên nền màu theo loại. */
@@ -340,7 +344,7 @@ function openPicker(date, meal) {
     <div class="actions"><button class="ghost sm" id="pk-new">+ Tạo món mới</button></div>`);
   const render = () => {
     const q = norm($("#pk-q", sh).value);
-    const list = state.foods.filter((f) => (kind === "all" || f.kind === kind) && (!q || norm(f.name).includes(q)));
+    const list = state.foods.filter((f) => matchKind(f, kind) && (!q || norm(f.name).includes(q)));
     $("#pk-list", sh).innerHTML =
       list.map((f) => {
         const have = stockOf(f.id);
@@ -381,7 +385,7 @@ function openPicker(date, meal) {
   $("#pk-list", sh).onclick = pick;
   $("#pk-sug", sh).onclick = pick;
   $("#pk-new", sh).onclick = () =>
-    openFoodEditor(null, { kind: kind === "all" ? firstKind() : kind, afterSave: (f) => addPlan(date, meal, f.id) });
+    openFoodEditor(null, { kind: kind === "all" || kind === COMBO ? firstKind() : kind, afterSave: (f) => addPlan(date, meal, f.id) });
   api(`/api/suggest?date=${date}`)
     .then((ids) => {
       const fs = ids.map((id) => state.byId.get(id)).filter(Boolean);
@@ -605,12 +609,12 @@ function foodSub(f) {
 }
 
 function renderLib() {
-  const counts = { all: state.foods.length };
+  const counts = { all: state.foods.length, [COMBO]: state.foods.filter(hasParts).length };
   for (const f of state.foods) counts[f.kind] = (counts[f.kind] ?? 0) + 1;
-  if (state.libKind !== "all" && !kindOf(state.libKind)) state.libKind = "all";
+  if (state.libKind !== "all" && state.libKind !== COMBO && !kindOf(state.libKind)) state.libKind = "all";
   $("#l-kinds").innerHTML = kindButtons(state.libKind, true, counts);
   const q = norm($("#l-q").value);
-  const list = state.foods.filter((f) => (state.libKind === "all" || f.kind === state.libKind) && (!q || norm(f.name).includes(q)));
+  const list = state.foods.filter((f) => matchKind(f, state.libKind) && (!q || norm(f.name).includes(q)));
   $("#lib-list").innerHTML =
     list.map((f) => {
       const have = stockOf(f.id);
@@ -633,7 +637,7 @@ $("#lib-list").onclick = (e) => {
   const b = e.target.closest("[data-id]");
   if (b) openFoodEditor(Number(b.dataset.id));
 };
-$("#l-add").onclick = () => openFoodEditor(null, { kind: state.libKind === "all" ? firstKind() : state.libKind });
+$("#l-add").onclick = () => openFoodEditor(null, { kind: state.libKind === "all" || state.libKind === COMBO ? firstKind() : state.libKind });
 $("#l-kinds-edit").onclick = () => openKindsEditor();
 
 // Quản lý loại: thêm / đổi tên / đổi màu / sắp xếp / xoá
@@ -1053,7 +1057,7 @@ $("#k-menu").onclick = () => {
     <div class="list" id="km-list"></div>`);
   const render = () => {
     const q = norm($("#km-q", sh).value);
-    const list = state.foods.filter((f) => (kind === "all" || f.kind === kind) && (!q || norm(f.name).includes(q)));
+    const list = state.foods.filter((f) => matchKind(f, kind) && (!q || norm(f.name).includes(q)));
     $("#km-list", sh).innerHTML =
       list.map((f) => {
         const have = stockOf(f.id);

@@ -138,6 +138,8 @@ h3 { font-size: 13px; margin: 14px 0 6px; color: var(--hint); font-weight: 600; 
   flex: none; border: 0.5px solid var(--line-strong); background: transparent; border-radius: 16px; padding: 5px 11px; font-size: 13px;
 }
 .filter button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.filter button.special { border-style: dashed; font-weight: 600; }
+.filter button.special.on { border-style: solid; }
 .filter small { opacity: 0.6; }
 .list { display: flex; flex-direction: column; }
 .item {
